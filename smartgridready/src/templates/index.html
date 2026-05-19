@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}SmartGridReady — Overview{% endblock %}
+{% block content %}
+<h1>Overview</h1>
+
+<section class="cards">
+  <div class="card">
+    <h3>Add-on</h3>
+    <p class="big">v{{ version }}</p>
+    <p>Evaluation every {{ evaluation_interval }} s</p>
+  </div>
+  <div class="card">
+    <h3>Devices</h3>
+    <p class="big">{{ device_count }}</p>
+    <p>Declared in config.yaml</p>
+  </div>
+  <div class="card">
+    <h3>Rules</h3>
+    <p class="big">{{ rule_count }}</p>
+    <p>Vehicles: {{ vehicle_count }}</p>
+  </div>
+  <div class="card">
+    <h3>MQTT discovery</h3>
+    <p class="big">{{ "on" if mqtt_enabled else "off" }}</p>
+    <p>Native HA entities published</p>
+  </div>
+</section>
+
+<h2>Last evaluation</h2>
+{% if last %}
+<table>
+  <tr><th>Timestamp</th><td>{{ last.get('timestamp', '—') }}</td></tr>
+  <tr><th>Actions taken</th><td>{{ last.get('actions_taken', 0) }}</td></tr>
+  <tr><th>Actions skipped</th><td>{{ last.get('actions_skipped', 0) }}</td></tr>
+</table>
+<details>
+  <summary>Context</summary>
+  <pre>{{ last.get('context', {}) | tojson(indent=2) }}</pre>
+</details>
+{% if last.get('details') %}
+<h3>Applied changes</h3>
+<table>
+  <tr><th>Rule</th><th>Value</th><th>Reason</th></tr>
+  {% for d in last.details %}
+  <tr><td>{{ d.rule }}</td><td>{{ d.value }}</td><td><code>{{ d.reason }}</code></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% else %}
+<p>No evaluation has run yet — waiting for the first cycle.</p>
+{% endif %}
+
+<p>
+  <button id="evalNow">Trigger evaluation now</button>
+  <span id="evalStatus" class="hint"></span>
+</p>
+<script>
+document.getElementById('evalNow').addEventListener('click', async () => {
+  const status = document.getElementById('evalStatus');
+  status.textContent = 'running…';
+  try {
+    const r = await fetch('api/evaluate', {method: 'POST'});
+    if (!r.ok) throw new Error(r.statusText);
+    const data = await r.json();
+    status.textContent = 'done — taken=' + data.actions_taken + ', skipped=' + data.actions_skipped;
+    setTimeout(() => location.reload(), 800);
+  } catch (e) {
+    status.textContent = 'error: ' + e.message;
+  }
+});
+</script>
+{% endblock %}

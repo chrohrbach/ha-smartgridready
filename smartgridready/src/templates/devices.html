@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Devices — SmartGridReady{% endblock %}
+{% block content %}
+<h1>Devices</h1>
+{% if not devices %}
+<p>No device has been declared yet. Edit
+   <code>/addon_config/config.yaml</code> and restart the add-on.</p>
+{% endif %}
+{% for d in devices %}
+<section class="device">
+  <h2>
+    {{ d.name }}
+    {% if d.connected %}
+      <span class="badge badge-ok">connected</span>
+    {% else %}
+      <span class="badge badge-fail">offline</span>
+    {% endif %}
+  </h2>
+  <p><strong>EID:</strong> <code>{{ d.eid }}</code></p>
+  {% if d.device_name %}
+  <p><strong>Reported name:</strong> {{ d.device_name }}</p>
+  {% endif %}
+  {% if d.last_error %}
+  <p class="error"><strong>Last error:</strong> {{ d.last_error }}</p>
+  {% endif %}
+
+  {% if d.properties %}
+  <details>
+    <summary>Connection properties</summary>
+    <table>
+      {% for k, v in d.properties.items() %}
+      <tr><th>{{ k }}</th><td>{{ v }}</td></tr>
+      {% endfor %}
+    </table>
+  </details>
+  {% endif %}
+
+  {% if d.functional_profiles %}
+  <h3>Functional profiles</h3>
+  {% for fp_name, dps in d.functional_profiles.items() %}
+  <h4>{{ fp_name }}</h4>
+  <table>
+    <tr><th>Data point</th><th>Direction</th><th>Type</th></tr>
+    {% for dp_name, meta in dps.items() %}
+    <tr>
+      <td>{{ dp_name }}</td>
+      <td>{{ meta.direction }}</td>
+      <td>{{ meta.type }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endfor %}
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

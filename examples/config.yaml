@@ -1,0 +1,173 @@
+# Reference SmartGridReady add-on configuration
+# ----------------------------------------------------------------------
+# Copy this file to /addon_config/config.yaml inside Home Assistant and
+# adapt the values to your installation, then restart the add-on.
+#
+# The EID identifiers below are taken from the public SGr product
+# library. Verify the exact filename for your hardware against
+# https://library.smartgridready.ch/Device — manufacturers publish
+# multiple variants (Modbus TCP, REST, transport-specific) and the
+# library is the source of truth.
+
+# -- Sensor mappings ---------------------------------------------------
+# All keys are optional. Missing sensors yield 0 / false at evaluation,
+# so rules that depend on them simply do not match.
+
+sensors:
+  spot_price: sensor.electricity_spot_price
+  pv_power: sensor.pv_total_power
+  house_consumption: sensor.house_total_power
+  battery_soc: sensor.home_battery_soc
+  grid_export: sensor.grid_export_power
+  grid_import: sensor.grid_import_power
+  temperature_outdoor: sensor.outdoor_temperature
+  pv_forecast_kwh: sensor.energy_production_tomorrow
+  pv_forecast_today_remaining_kwh: sensor.energy_production_today_remaining
+  pv_current_hour_kwh: sensor.energy_current_hour
+  pv_forecast_today_kwh: sensor.energy_production_today
+  away_mode: input_boolean.away_mode
+  # Distribution-network curtailment signal (optional). If a third-party
+  # integration publishes the canonical entity IDs
+  # `binary_sensor.dso_curtailment_active` and
+  # `sensor.dso_curtailment_factor` the engine picks them up
+  # automatically; otherwise point custom entities here.
+  # dso_curtailment_active: binary_sensor.dso_curtailment_active
+  # dso_curtailment_factor: sensor.dso_curtailment_factor
+
+# Optional kill switch — flip this off in HA to pause the rules engine.
+enable_toggle: input_boolean.smartgridready_enabled
+
+# Optional — point of common coupling cap. Enables `pcc_power_w`,
+# `pcc_headroom_w` and `pcc_overload` in the rule DSL.
+grid_connection_limit_w: 25000
+
+# Optional — home battery total capacity, enables battery_room_kwh /
+# battery_available_kwh helpers.
+battery_capacity_kwh: 10
+
+# -- Devices -----------------------------------------------------------
+
+devices:
+
+  - name: "Heat Pump"
+    # Generic Stiebel Eltron heat pump EID (level 4 = M2M, Modbus).
+    eid: SGr_04_0015_xxxx_StiebelEltron_HeatPump_V1.0.0
+    properties:
+      ip: 192.168.1.50
+      port: 502
+      slave_id: 1
+
+  - name: "Wallbox"
+    # Generic KEBA KeContact P30 EID.
+    eid: SGr_04_mmmm_dddd_KEBA_KeContact_P30_V0.1
+    properties:
+      ip: 192.168.1.60
+      port: 502
+      slave_id: 1
+
+  # Shelly Pro 3EM via local REST (basic auth):
+  # - name: "Energy Meter"
+  #   eid: SGr_00_mmmm_dddd_Shelly_Pro3EM_RestAPILocalBasicAuth_V1.0
+  #   properties:
+  #     base_uri: http://192.168.1.70
+  #     username: admin
+  #     password: secret
+
+# -- Rules -------------------------------------------------------------
+
+rules:
+
+  # Heat pump SG-Ready mode (writable command).
+  #
+  # IMPORTANT: write to `SGReadyOpModeCmd` (RW), not `SGReadyState`
+  # (read-only feedback). The values are the enum members declared in
+  # the SG-Ready functional profile:
+  #   HP_LOCKED       — utility lock (mode 1)
+  #   HP_NORMAL       — normal operation (mode 2/3)
+  #   HP_INTENSIFIED  — boost / store surplus (mode 3)
+  #   HP_FORCED       — forced run (mode 4)
+  - device: "Heat Pump"
+    profile: "SG-ReadyStates"
+    data_point: "SGReadyOpModeCmd"
+    min_interval: 15
+    conditions:
+      - when: "has_surplus AND spot_price < 0.08"
+        value: HP_FORCED
+      - when: "spot_price < 0.12"
+        value: HP_NORMAL
+      - when: "spot_price > 0.25"
+        value: HP_LOCKED
+      - when: "is_peak AND NOT has_surplus"
+        value: HP_LOCKED
+      - default:
+        value: HP_NORMAL
+
+  # Hot-water target temperature — boost during the solar window.
+  - device: "Heat Pump"
+    profile: "DomHotWaterCtrl"
+    data_point: "DomHotWaterTempSetpoint"
+    min_interval: 30
+    conditions:
+      - when: "has_surplus AND is_solar_window"
+        value: 65
+      - when: "is_offpeak AND spot_price < 0.10"
+        value: 60
+      - default:
+        value: 50
+
+  # EV charging current limit (in amps).
+  # The writable data point in the EMS_Current_Limit profile is
+  # `EMSCurrentLimit`, NOT `MaxCurrentLimit`.
+  - device: "Wallbox"
+    profile: "EMS_Current_Limit"
+    data_point: "EMSCurrentLimit"
+    min_interval: 5
+    conditions:
+      # DSO curtailment is an override — beats every other clause.
+      - when: "dso_curtailment_active"
+        value: 6
+      # Near the PCC cap → drop to minimum so other loads have headroom.
+      - when: "pcc_headroom_w < 2000"
+        value: 6
+      - when: "surplus_pv > 3000"
+        value: 16
+      - when: "surplus_pv > 1500"
+        value: 10
+      - when: "is_offpeak AND spot_price < 0.10"
+        value: 16
+      - when: "is_peak"
+        value: 6
+      - default:
+        value: 8
+
+  # V2H discharge: negative current, gated by the V2H safety layer.
+  # Requires a wallbox EID that exposes a bidirectional current limit.
+  - device: "Wallbox"
+    profile: "EMS_Current_Limit"
+    data_point: "EMSCurrentLimit"
+    min_interval: 5
+    conditions:
+      - when: "is_peak AND v2h_available AND home_deficit_w > 1500"
+        value: -16
+      - when: "is_peak AND v2h_available AND home_deficit_w > 500"
+        value: -10
+
+# -- Vehicles (V2H / V2G) ---------------------------------------------
+# Required to allow negative current targets.
+
+vehicles:
+  - name: "Kia EV6"
+    soc_entity: sensor.kia_ev6_battery_level
+    plugged_entity: binary_sensor.kia_ev6_charging_cable_connected
+    charging_power_entity: sensor.kia_ev6_charging_power
+    charger_device: "Wallbox"
+    battery_capacity_kwh: 77
+    v2h:
+      enabled: false               # flip to true only when your wallbox supports V2X
+      min_soc: 50
+      max_discharge_a: 16
+      allow_window: "17h-22h"
+      require_plugged: true
+      max_cycles_per_day: 1
+      requires_grd_agreement: false
+      grd_agreement_signed: false

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Config — SmartGridReady{% endblock %}
+{% block content %}
+<h1>Configuration</h1>
+<p>File: <code>{{ config_path }}</code></p>
+<p>Edit this file with the Home Assistant File Editor (or VS Code
+   add-on), then restart this add-on.</p>
+<pre class="yaml">{{ body }}</pre>
+{% endblock %}

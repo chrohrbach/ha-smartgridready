@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Rules — SmartGridReady{% endblock %}
+{% block content %}
+<h1>Rules</h1>
+{% if not rules %}
+<p>No rule defined yet. Add a <code>rules:</code> section to your
+   configuration file.</p>
+{% endif %}
+{% for r in rules %}
+<section class="rule">
+  <h2>{{ r.device }} <span class="path">{{ r.profile }} / {{ r.data_point }}</span></h2>
+  <p>min_interval: {{ r.min_interval }} min</p>
+  <ol>
+    {% for c in r.conditions %}
+    <li>
+      {% if c.default is defined or 'default' in c %}
+        <strong>default →</strong> {{ c.value }}
+      {% else %}
+        <code>{{ c.when }}</code> → {{ c.value }}
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endfor %}
+
+{% if last and last.details %}
+<h2>Last applied changes</h2>
+<table>
+  <tr><th>Rule</th><th>Value</th><th>Matched condition</th></tr>
+  {% for d in last.details %}
+  <tr><td>{{ d.rule }}</td><td>{{ d.value }}</td><td><code>{{ d.reason }}</code></td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if last and last.skipped %}
+<h2>Last cycle: skipped rules</h2>
+<table>
+  <tr><th>Rule</th><th>Reason</th><th>Detail</th></tr>
+  {% for s in last.skipped %}
+  <tr>
+    <td>{{ s.rule }}</td>
+    <td>{{ s.reason }}</td>
+    <td>
+      {% if s.value is defined %}value={{ s.value }} {% endif %}
+      {% if s.wait_minutes is defined %}wait={{ s.wait_minutes }}min {% endif %}
+      {% if s.detail %}{{ s.detail }}{% endif %}
+      {% if s.error %}<span class="error">{{ s.error }}</span>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

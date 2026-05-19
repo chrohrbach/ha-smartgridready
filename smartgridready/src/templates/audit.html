@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Audit — SmartGridReady{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<p>The last {{ entries|length }} evaluation cycle(s), newest first.</p>
+
+{% if not entries %}
+<p>No audit entry yet.</p>
+{% endif %}
+
+{% for e in entries %}
+<details class="audit-entry">
+  <summary>
+    <span class="ts">{{ e.timestamp }}</span>
+    {% if e.skipped is string %}
+      <span class="badge">skipped: {{ e.skipped }}</span>
+    {% else %}
+      taken: <strong>{{ e.actions_taken }}</strong> ·
+      skipped: <strong>{{ e.actions_skipped }}</strong>
+    {% endif %}
+  </summary>
+
+  {% if e.context %}
+  <h4>Context</h4>
+  <pre>{{ e.context | tojson(indent=2) }}</pre>
+  {% endif %}
+
+  {% if e.details %}
+  <h4>Applied</h4>
+  <table>
+    <tr><th>Rule</th><th>Value</th><th>Reason</th></tr>
+    {% for d in e.details %}
+    <tr><td>{{ d.rule }}</td><td>{{ d.value }}</td><td><code>{{ d.reason }}</code></td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if e.skipped is iterable and not (e.skipped is string) %}
+  <h4>Skipped</h4>
+  <table>
+    <tr><th>Rule</th><th>Reason</th><th>Detail</th></tr>
+    {% for s in e.skipped %}
+    <tr>
+      <td>{{ s.rule }}</td>
+      <td>{{ s.reason }}</td>
+      <td>
+        {% if s.value is defined %}value={{ s.value }} {% endif %}
+        {% if s.wait_minutes is defined %}wait={{ s.wait_minutes }}min {% endif %}
+        {% if s.detail %}{{ s.detail }}{% endif %}
+        {% if s.error %}<span class="error">{{ s.error }}</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</details>
+{% endfor %}
+{% endblock %}
