@@ -77,6 +77,9 @@ Planned roadmap item:
   lands, it will be documented as a Home Assistant proxy layer, not as
   native SmartGridready support.
 
+> Important: `virtual_devices` can use the same EMS engine for non-SGr
+> hardware, but this is **not SmartGridready-native behaviour**.
+
 ## Where to find EID profiles
 
 Public catalogue:

@@ -357,6 +357,10 @@ hardware and is a plausible future addition here.
 
 If/when added, it must be described precisely for what it is:
 
+> **Important**
+> `virtual_devices` can use the same EMS engine for non-SGr hardware,
+> but this is **not SmartGridready-native behaviour**.
+
 - a **Home Assistant proxy/orchestration layer**
 - useful for applying the same EMS logic to non-SGr devices
 - **not** native SmartGridready communication
