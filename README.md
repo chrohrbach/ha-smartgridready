@@ -1,27 +1,27 @@
-# Home Assistant SmartGridReady Add-on
+# Home Assistant SmartGridready Add-on
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Home Assistant Add-on](https://img.shields.io/badge/Home%20Assistant-Add--on-41BDF5?logo=home-assistant&logoColor=white)](https://www.home-assistant.io/)
 
 Universal, manufacturer-neutral control of energy devices in Home Assistant via
-the Swiss **[SmartGridReady](https://www.smartgridready.ch)** standard.
+the Swiss **[SmartGridready](https://www.smartgridready.ch)** standard.
 
 One add-on, one configuration file: drive any SGr-labelled heat pump, EV
 charger, energy meter, PV inverter, or battery — without writing a single
 Modbus register or REST call.
 
-> Important: this repository is **not SmartGridReady-certified**.
-> It may use SmartGridReady specifications, EID XML profiles, and the
-> official commhandler stack, but any formal SmartGridReady conformity
+> Important: this repository is **not SmartGridready-certified**.
+> It may use SmartGridready specifications, EID XML profiles, and the
+> official commhandler stack, but any formal SmartGridready conformity
 > or EMS certification would require an explicit certification process
-> with SmartGridReady / the relevant test lab. Using SGr does not make
+> with SmartGridready / the relevant test lab. Using SGr does not make
 > this add-on certified.
 
 ---
 
 ## What it does
 
-SmartGridReady (SGr) is a Swiss-backed standard that abstracts device-specific
+SmartGridready (SGr) is a Swiss-backed standard that abstracts device-specific
 protocols (Modbus TCP/RTU, REST, MQTT) behind standardised *functional
 profiles* described in XML (the **EID**, External Interface Description).
 The [SGr product library](https://library.smartgridready.ch) catalogues
@@ -166,7 +166,7 @@ the SGr device entities still update via MQTT.
   ============================================================
 
   +--------------------+      +------------------------------+
-  |   HA Core          |      |   SmartGridReady add-on      |
+  |   HA Core          |      |   SmartGridready add-on      |
   |   (entities,       |      |   (Docker container)         |
   |    automations,    |      |                              |
   |    dashboards)     |      |  +------------------------+  |
@@ -248,7 +248,7 @@ Powered by the official `sgr-commhandler` Python stack. Every device
 read, every write, every discovery announcement goes through the
 canonical SGr functional-profile API — there is no manufacturer-specific
 code anywhere, no hand-rolled Modbus register map, no per-vendor REST
-glue. EIDs are fetched directly from the SmartGridReady product
+glue. EIDs are fetched directly from the SmartGridready product
 library and cached locally.
 
 The HA-side exposure preserves the EID-declared semantics rather than
@@ -264,7 +264,7 @@ flattening everything to a generic numeric entity:
 | Enum literals | `options` on `select` entities (e.g. `HP_LOCKED` / `HP_NORMAL` / `HP_INTENSIFIED` / `HP_FORCED`) |
 | Inferred device-class (current, voltage, power, energy, temperature, …) | `device_class` on the entity, when the unit is unambiguous |
 
-**No "SGr-compliant" sticker.** The SmartGridReady conformance
+**No "SGr-compliant" sticker.** The SmartGridready conformance
 programme applies to *devices* (vetted via their EID), not to
 communicators or EMS software. There is no certification body issuing
 such a label for code like this one, so claiming it would be marketing
@@ -272,16 +272,16 @@ language with no referent. What you can verify in this repository: the
 commhandler dependency, the absence of manufacturer-specific I/O, and
 the EID-property propagation listed above.
 
-If SmartGridReady introduces or operationalises an EMS certification
+If SmartGridready introduces or operationalises an EMS certification
 path for software like this add-on, that certification would still have
 to be obtained explicitly. This repository should therefore be read as
 "SGr-based" or "SGr-capable", **not** as certified by default.
 
 The optimisation layer (rules DSL, V2H safety, hysteresis, audit log)
-is the add-on's own engineering and is **not part of the SmartGridReady
+is the add-on's own engineering and is **not part of the SmartGridready
 standard** — SGr defines a device interface, not an EMS specification.
 
-## Why SmartGridReady
+## Why SmartGridready
 
 The roll-out of decentralised PV, heat pumps, and EV chargers is creating
 bottlenecks in distribution grids that pure copper-and-steel reinforcement
@@ -313,7 +313,7 @@ EID XML files are public. Two entry points:
 
 ### Technical context
 
-SmartGridReady places emphasis on Web and IP technologies and asks
+SmartGridready places emphasis on Web and IP technologies and asks
 manufacturers to ship device profiles as XML files. The standard
 focuses on **functional profiles** and reuses the communication
 protocols already present in buildings (Modbus TCP/RTU, HTTP/REST,
@@ -334,7 +334,7 @@ the *generic* version of that approach.
 
 ## Where to find the Python libraries
 
-The SmartGridReady association maintains an official Python stack on
+The SmartGridready association maintains an official Python stack on
 GitHub. They are independent libraries you can use directly if you
 ever need to drop down below this add-on:
 
@@ -373,7 +373,7 @@ with the same API surface. This add-on does not depend on it.
    https://github.com/chrohrbach/ha-smartgridready
    ```
 
-2. Install the **SmartGridReady** add-on.
+2. Install the **SmartGridready** add-on.
 
 3. Create `/config/smartgridready/config.yaml` (the add-on writes a
    commented example on first start).
@@ -498,7 +498,7 @@ the default Swiss grid-CO₂ constant when present.
 See [docs/configuration.md](docs/configuration.md) for the full schema,
 [docs/rules-dsl.md](docs/rules-dsl.md) for the condition language, and
 [docs/supported-devices.md](docs/supported-devices.md) for an indicative
-device list. For an explicit map of which SmartGridReady concepts
+device list. For an explicit map of which SmartGridready concepts
 this add-on implements and which it deliberately leaves out, see
 [docs/scope-and-gaps.md](docs/scope-and-gaps.md).
 
@@ -526,7 +526,7 @@ Pull requests welcome — especially:
 
 This add-on was contributed to the open-source community by
 [**teleia**](https://www.teleia.ch), which has natively integrated
-SmartGridReady into its smart-home platform
+SmartGridready into its smart-home platform
 [**casasmooth**](https://www.casasmooth.com). The code released here
 is the same engine that drives heat pumps, EV chargers, and energy
 meters in casasmooth installations — extracted, decoupled, and
@@ -535,6 +535,6 @@ community can benefit from a manufacturer-neutral energy stack.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The SmartGridReady label and the
-referenced EID XML profiles are property of the SmartGridReady
+MIT — see [LICENSE](LICENSE). The SmartGridready label and the
+referenced EID XML profiles are property of the SmartGridready
 association ([www.smartgridready.ch](https://www.smartgridready.ch)).

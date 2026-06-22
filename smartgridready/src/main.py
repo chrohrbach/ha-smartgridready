@@ -1,4 +1,4 @@
-"""SmartGridReady add-on entry point.
+"""SmartGridready add-on entry point.
 
 Orchestrates the lifecycle of all components:
 
@@ -122,7 +122,7 @@ async def run() -> int:
     state = AppState()
     configure_logging(state.options.log_level)
     log = logging.getLogger("smartgridready")
-    log.info("Starting SmartGridReady add-on v%s", state.version)
+    log.info("Starting SmartGridready add-on v%s", state.version)
 
     # Prepare paths.
     state.options.share_path.mkdir(parents=True, exist_ok=True)

@@ -110,13 +110,13 @@ class UserConfig:
 # -----------------------------------------------------------------------------
 
 EXAMPLE_YAML = """\
-# SmartGridReady add-on configuration
+# SmartGridready add-on configuration
 # ----------------------------------------------------------------------
 # Edit this file with the Home Assistant File Editor or VS Code add-on,
-# then restart the SmartGridReady add-on.
+# then restart the SmartGridready add-on.
 #
 # Devices are identified by their EID (External Interface Description)
-# from the SmartGridReady product library:
+# from the SmartGridready product library:
 #   https://library.smartgridready.ch
 #
 # The EID XML is downloaded and cached on first connection.

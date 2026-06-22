@@ -31,7 +31,7 @@ STATIC_DIR = SRC_DIR / "static"
 def build_app(state) -> FastAPI:
     """Build the FastAPI app bound to a shared ``AppState`` instance."""
     app = FastAPI(
-        title="SmartGridReady",
+        title="SmartGridready",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,

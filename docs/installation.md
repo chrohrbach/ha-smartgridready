@@ -23,12 +23,12 @@
    https://github.com/chrohrbach/ha-smartgridready
    ```
 
-4. The store will refresh and the **SmartGridReady** add-on will
+4. The store will refresh and the **SmartGridready** add-on will
    appear in the list.
 
 ## Installing the add-on
 
-1. Click **SmartGridReady** in the store.
+1. Click **SmartGridready** in the store.
 2. Press **Install**. The image is pulled from GitHub Container
    Registry; this typically takes a couple of minutes on first run.
 3. Once installed, switch to the **Configuration** tab and review the
@@ -43,7 +43,7 @@
    none exists yet. Look at the **Log** tab to confirm the file was
    created.
 2. Open the ingress UI from the left-hand sidebar (icon labelled
-   *SmartGridReady*).
+   *SmartGridready*).
 3. The Overview page will show:
    - 0 devices (you have not configured any yet),
    - MQTT discovery `on` or `off`, depending on whether a broker was
@@ -57,7 +57,7 @@
    [configuration.md](configuration.md) for the full schema and the
    [rules DSL](rules-dsl.md) for the condition language.
 3. Save the file.
-4. Restart the **SmartGridReady** add-on.
+4. Restart the **SmartGridready** add-on.
 5. Re-open the ingress UI. Each declared device should appear under
    **Devices** with the badge **connected** (green). The
    **Audit** tab fills up as soon as the first evaluation cycle
@@ -67,7 +67,7 @@
 
 The add-on follows semantic versioning. To update:
 
-1. Visit the SmartGridReady add-on page.
+1. Visit the SmartGridready add-on page.
 2. Press **Update** when a new version is published.
 3. Read the **Changelog** tab before pressing — breaking changes are
    highlighted at the top.

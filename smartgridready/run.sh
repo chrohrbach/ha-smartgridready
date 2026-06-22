@@ -1,5 +1,5 @@
 #!/bin/sh
-# SmartGridReady add-on launcher.
+# SmartGridready add-on launcher.
 # Reads add-on options from /data/options.json and starts the Python service.
 
 set -e

@@ -1,4 +1,4 @@
-"""SmartGridReady device service.
+"""SmartGridready device service.
 
 Manages devices declared in the user's configuration using the
 ``sgr-commhandler`` library. Each device is built from an EID XML
@@ -101,7 +101,7 @@ class SGrDevice:
 
 
 class SGrService:
-    """Service for managing SmartGridReady devices.
+    """Service for managing SmartGridready devices.
 
     Lifecycle: ``connect_all`` → ``read``/``write`` → ``disconnect_all``.
     """

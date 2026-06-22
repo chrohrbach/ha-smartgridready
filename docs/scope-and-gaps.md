@@ -1,9 +1,9 @@
-# Scope and gaps — how this add-on maps to SmartGridReady
+# Scope and gaps — how this add-on maps to SmartGridready
 
-This document is the honest answer to *"how SmartGridReady is this
+This document is the honest answer to *"how SmartGridready is this
 add-on, really?"* It cross-references the code against the official
 SGr specification artefacts and the public criteria for the
-SmartGridReady labels.
+SmartGridready labels.
 
 It is not a marketing page — items the add-on does **not** cover are
 listed here so users can decide whether the gap matters for their use
@@ -36,9 +36,9 @@ building. The product label does not apply to it.
 Important wording: this repository is **not certified** merely because
 it uses SGr artefacts. If an EMS label / certification path becomes
 available for software like this add-on, it would require an explicit
-SmartGridReady certification process. Until then, the accurate wording
-is "uses SmartGridReady" or "implements parts of the SmartGridReady
-model", not "SmartGridReady-certified".
+SmartGridready certification process. Until then, the accurate wording
+is "uses SmartGridready" or "implements parts of the SmartGridready
+model", not "SmartGridready-certified".
 
 ### 1.2 Level of operation (`m`, `1`–`6`, compound)
 
@@ -91,7 +91,7 @@ The six functional requirements:
    an optimised electricity bill.
 6. **Monitoring** — energy and power data captured and stored.
 
-Conformity is checked at the FHNW SmartGridReady-Testlab and the BFH
+Conformity is checked at the FHNW SmartGridready-Testlab and the BFH
 PV laboratory.
 
 ---
@@ -359,12 +359,12 @@ If/when added, it must be described precisely for what it is:
 
 - a **Home Assistant proxy/orchestration layer**
 - useful for applying the same EMS logic to non-SGr devices
-- **not** native SmartGridReady communication
-- therefore **not evidence of SmartGridReady conformity or certification**
+- **not** native SmartGridready communication
+- therefore **not evidence of SmartGridready conformity or certification**
 
 Virtual devices would widen practical coverage, but they would also move
 the add-on toward a hybrid HA energy orchestrator. They should never be
-marketed as "everything behind it becomes SmartGridReady".
+marketed as "everything behind it becomes SmartGridready".
 
 ---
 

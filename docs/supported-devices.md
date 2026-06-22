@@ -1,6 +1,6 @@
 # Supported devices
 
-This add-on can drive **any device with a SmartGridReady EID** — the
+This add-on can drive **any device with a SmartGridready EID** — the
 generic code path does not need to be modified per manufacturer. The
 protocol details (Modbus register layout, REST endpoints, MQTT topics)
 all live inside the EID XML file published by the SGr association.

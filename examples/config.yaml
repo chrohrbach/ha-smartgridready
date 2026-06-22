@@ -1,4 +1,4 @@
-# Reference SmartGridReady add-on configuration
+# Reference SmartGridready add-on configuration
 # ----------------------------------------------------------------------
 # Copy this file to /addon_config/config.yaml inside Home Assistant and
 # adapt the values to your installation, then restart the add-on.

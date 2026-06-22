@@ -371,7 +371,7 @@ class MqttBridge:
         device_block = {
             "identifiers": [f"{self.prefix}_{slug(device_name)}"],
             "name": device_name,
-            "manufacturer": "SmartGridReady",
+            "manufacturer": "SmartGridready",
             "model": device_name,
         }
         payload: Dict[str, Any] = {

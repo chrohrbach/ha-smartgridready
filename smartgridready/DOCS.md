@@ -1,12 +1,12 @@
-# SmartGridReady add-on
+# SmartGridready add-on
 
-Universal energy-device orchestration via the Swiss SmartGridReady
+Universal energy-device orchestration via the Swiss SmartGridready
 standard.
 
-Important: this add-on is **not SmartGridReady-certified**. It uses the
-SmartGridReady specifications and Python commhandler, but any formal
+Important: this add-on is **not SmartGridready-certified**. It uses the
+SmartGridready specifications and Python commhandler, but any formal
 conformity or EMS certification would require an explicit certification
-process with SmartGridReady / the relevant lab.
+process with SmartGridready / the relevant lab.
 
 This document is shown by Home Assistant in the **Documentation** tab
 of the add-on page. The fuller, illustrated documentation lives in
@@ -14,7 +14,7 @@ the [GitHub repository](https://github.com/chrohrbach/ha-smartgridready).
 
 ## What it does
 
-The add-on connects to any device labelled with a SmartGridReady EID
+The add-on connects to any device labelled with a SmartGridready EID
 profile (heat pumps, EV chargers, energy meters, PV inverters,
 batteries), exposes their data points as native Home Assistant
 entities via MQTT discovery, and runs a rules engine on a fixed
@@ -75,7 +75,7 @@ Planned roadmap item:
 - optional `virtual_devices` / HA proxy devices may be added later to
   drive non-SGr hardware through Home Assistant services. If/when that
   lands, it will be documented as a Home Assistant proxy layer, not as
-  native SmartGridReady support.
+  native SmartGridready support.
 
 ## Where to find EID profiles
 
@@ -98,4 +98,4 @@ add-on is a freshly extracted, re-packaged release.
 
 Open-sourced by [teleia](https://www.teleia.ch) — the engine is
 extracted from [casasmooth](https://www.casasmooth.com), which has
-natively integrated SmartGridReady since early 2026.
+natively integrated SmartGridready since early 2026.

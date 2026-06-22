@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the SmartGridReady Home Assistant add-on are
+All notable changes to the SmartGridready Home Assistant add-on are
 documented here. The format is based on [Keep a Changelog](https://keepachangelog.com)
 and this project adheres to [Semantic Versioning](https://semver.org).
 
@@ -92,7 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   `m`, `1`–`6`, or compound notation like `4m`) so callers know what
   control depth a profile actually supports.
 - **`docs/scope-and-gaps.md`** — explicit, sourced mapping of which
-  SmartGridReady concepts the add-on covers and which it deliberately
+  SmartGridready concepts the add-on covers and which it deliberately
   leaves out (e.g. characteristic-curve writes for L3/L5, joint MPC
   optimisation, native DSO endpoint).
 
@@ -113,7 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 - First public release.
 - SGr device wrapper based on `sgr-commhandler` (Modbus TCP, REST).
 - Automatic download and caching of EID XML profiles from the
-  SmartGridReady product library.
+  SmartGridready product library.
 - Rules engine with priority-ordered conditions, hysteresis, and a
   safe expression DSL (no `eval()`).
 - Context variables for spot price, PV surplus, battery SOC,
