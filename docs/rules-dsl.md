@@ -15,13 +15,18 @@ surplus_pv > 3000
 battery_soc >= 50
 temperature_outdoor <= -5
 hour == 14
+grid_signal_type == 'sg_ready'
 ```
 
 Supported operators: `<`, `<=`, `>`, `>=`, `==`, `!=`.
 
 The left-hand side must be a **context variable name**. The right-hand
-side must be a literal numeric value (a trailing `h` is tolerated for
-hour comparisons: `hour > 10h`).
+side may be:
+
+- a numeric literal (a trailing `h` is tolerated for hour comparisons:
+  `hour > 10h`)
+- or, for `==` / `!=`, a quoted string literal such as
+  `'sg_ready'` or `"load_reduction"`
 
 If either side can't be parsed, the expression evaluates to `false`.
 
@@ -48,9 +53,11 @@ NOT is_peak
 
 - `AND` and `OR` are space-separated, **uppercase**.
 - `NOT` prefixes the inner expression.
-- Operator precedence is **left-to-right**, no parentheses. If you need
-  parentheses, split the rule into multiple conditions or move the
-  combination into a helper boolean elsewhere.
+- Operator precedence follows standard boolean algebra: `AND` binds
+  tighter than `OR`. So `A OR B AND C` means `A OR (B AND C)`.
+- Parentheses are not supported. If you need explicit grouping,
+  split the logic into multiple conditions or precompute a helper
+  boolean elsewhere.
 
 ### Time-range shortcut
 
@@ -212,6 +219,22 @@ v2h_reserve_kwh_total   # float — sum across all available vehicles
 > Write the **command** data point `SGReadyOpModeCmd`, not the
 > read-only feedback `SGReadyState`.
 
+### Use a templated value from the live context
+
+```yaml
+- device: "Battery"
+  profile: "BatteryStorageCtrl"
+  data_point: "TargetSoc"
+  min_interval: 10
+  conditions:
+    - when: "battery_soc < 40"
+      value: "{{ battery_soc }}"
+```
+
+`value:` supports simple `{{ key }}` placeholders. The placeholder is
+resolved from the current rule context before the write. Numeric
+results are cast back to `int` / `float` when possible.
+
 ### Hot-water midday boost
 
 ```yaml
@@ -247,6 +270,10 @@ v2h_reserve_kwh_total   # float — sum across all available vehicles
   profile: "EMS_Current_Limit"
   data_point: "EMSCurrentLimit"
   min_interval: 5
+  smooth_transition:
+    window: 0
+    delay: 30
+    duration: 0
   conditions:
     - when: "surplus_pv > 3000"
       value: 16
@@ -257,6 +284,26 @@ v2h_reserve_kwh_total   # float — sum across all available vehicles
     - default:
       value: 8
 ```
+
+If the wallbox EID declares the optional helper data points
+`EMSCurrentLimit.SmoothTransition_Window`,
+`EMSCurrentLimit.SmoothTransition_Delay`, and
+`EMSCurrentLimit.SmoothTransition_Duration`, the engine writes them
+before the main command. If they are absent, they are skipped silently.
+
+### Compare a string-valued context variable
+
+```yaml
+- device: "Heat Pump"
+  profile: "SG-ReadyStates"
+  data_point: "SGReadyOpModeCmd"
+  min_interval: 5
+  conditions:
+    - when: "grid_signal_type == 'sg_ready'"
+      value: HP_NORMAL
+```
+
+String comparison is supported only for `==` and `!=`.
 
 ### V2H discharge into the home during the evening peak
 

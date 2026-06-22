@@ -56,6 +56,15 @@ for what the add-on covers vs what it does not.
 A complete working example ships at
 [`examples/config.yaml`](https://github.com/chrohrbach/ha-smartgridready/blob/main/examples/config.yaml).
 
+Highlights worth knowing before you configure it:
+
+- devices may declare optional `evse_safety` watchdog settings
+  (`safe_current`, `max_receive_time_sec`) for compatible wallbox EIDs
+- rules may declare optional `smooth_transition` helper writes
+- `value:` supports simple `{{ key }}` placeholders resolved from the
+  live rule context
+- `==` / `!=` also work with quoted string literals in `when:`
+
 ## Where to find EID profiles
 
 Public catalogue:

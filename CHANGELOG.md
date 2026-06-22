@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- **EVSE watchdog configuration**: devices may now declare
+  `evse_safety.safe_current` and `evse_safety.max_receive_time_sec`.
+  When the EID exposes the optional helper data points, the add-on
+  writes them once at connect time.
+- **Optional data-point helpers** in the SGr service:
+  `write_if_exists()` for best-effort writes to optional EID points and
+  `read_profile()` to fetch all values of a functional profile in one call.
+- **SmoothTransition support** on rules: optional
+  `smooth_transition.window|delay|duration` writes
+  `*.SmoothTransition_*` helper data points before the main command.
+- **Templated rule values**: `value:` may reference the live context
+  via `{{ key }}` placeholders.
+- **String equality in the DSL**: `==` and `!=` now support quoted
+  string literals such as `grid_signal_type == 'sg_ready'`.
+
 ### Fixed
 - **EID resolver**: auto-append `.xml` to the SGr library URL — the
   `/prodx/<name>` endpoint returns 404 without it. Users may now write
@@ -79,23 +95,6 @@ and this project adheres to [Semantic Versioning](https://semver.org).
   SmartGridReady concepts the add-on covers and which it deliberately
   leaves out (e.g. characteristic-curve writes for L3/L5, joint MPC
   optimisation, native DSO endpoint).
-
-### Added
-- **EID cache TTL** (30 days) plus stale-cache fallback when the SGr
-  library is unreachable — manufacturer corrections flow in
-  automatically and an offline add-on still boots.
-- **Hysteresis persistence** to `hysteresis.json` — `min_interval`
-  survives add-on restarts. Without this, a reboot reset the counter
-  and the heat-pump compressor could be commanded back-to-back within
-  seconds. Old entries (> 30 days) are pruned at load.
-- **DynamicParameter pass-through** on `SGrService.read()`. The new
-  optional `parameters: dict` is forwarded to the SDK's
-  `get_value_async`, unlocking profiles like `DynamicTariff` (needs a
-  date) and multi-channel meters.
-- **LevelOfOperation exposure** in `describe()` / `to_dict()`. Both
-  device-level and per-functional-profile level are surfaced (values
-  `m`, `1`–`6`, or compound notation like `4m`) so callers know what
-  control depth a profile actually supports.
 
 ### Changed
 - Direction and data-type values in `describe()` output now use the
