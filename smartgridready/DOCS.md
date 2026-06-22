@@ -3,6 +3,11 @@
 Universal energy-device orchestration via the Swiss SmartGridReady
 standard.
 
+Important: this add-on is **not SmartGridReady-certified**. It uses the
+SmartGridReady specifications and Python commhandler, but any formal
+conformity or EMS certification would require an explicit certification
+process with SmartGridReady / the relevant lab.
+
 This document is shown by Home Assistant in the **Documentation** tab
 of the add-on page. The fuller, illustrated documentation lives in
 the [GitHub repository](https://github.com/chrohrbach/ha-smartgridready).
@@ -64,6 +69,13 @@ Highlights worth knowing before you configure it:
 - `value:` supports simple `{{ key }}` placeholders resolved from the
   live rule context
 - `==` / `!=` also work with quoted string literals in `when:`
+
+Planned roadmap item:
+
+- optional `virtual_devices` / HA proxy devices may be added later to
+  drive non-SGr hardware through Home Assistant services. If/when that
+  lands, it will be documented as a Home Assistant proxy layer, not as
+  native SmartGridReady support.
 
 ## Where to find EID profiles
 

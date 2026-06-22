@@ -33,6 +33,13 @@ three independent axes:
 This add-on is a **communicator / EMS** — neither component nor
 building. The product label does not apply to it.
 
+Important wording: this repository is **not certified** merely because
+it uses SGr artefacts. If an EMS label / certification path becomes
+available for software like this add-on, it would require an explicit
+SmartGridReady certification process. Until then, the accurate wording
+is "uses SmartGridReady" or "implements parts of the SmartGridReady
+model", not "SmartGridReady-certified".
+
 ### 1.2 Level of operation (`m`, `1`–`6`, compound)
 
 `LevelOfOperation` is declared per device and per functional profile
@@ -337,6 +344,27 @@ first evaluation tick so cadence sits on HH:00 / HH:15 / HH:30 /
 HH:45. Useful when the upstream tariff is also published in
 15-minute slices. The context variable `minute_in_quarter` (0–14) is
 always available regardless of alignment.
+
+### 3.13 Virtual devices / HA proxy layer
+
+**Status:** not implemented yet in this repository.
+
+casasmooth contains an additional mechanism for "virtual devices"
+(`climate_proxy`, `switch_proxy`, `boiler_proxy`, `number_proxy`) that
+maps the same rule grammar onto Home Assistant service calls instead of
+native SGr device writes. This is a useful extension for non-SGr
+hardware and is a plausible future addition here.
+
+If/when added, it must be described precisely for what it is:
+
+- a **Home Assistant proxy/orchestration layer**
+- useful for applying the same EMS logic to non-SGr devices
+- **not** native SmartGridReady communication
+- therefore **not evidence of SmartGridReady conformity or certification**
+
+Virtual devices would widen practical coverage, but they would also move
+the add-on toward a hybrid HA energy orchestrator. They should never be
+marketed as "everything behind it becomes SmartGridReady".
 
 ---
 

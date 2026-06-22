@@ -10,6 +10,13 @@ One add-on, one configuration file: drive any SGr-labelled heat pump, EV
 charger, energy meter, PV inverter, or battery — without writing a single
 Modbus register or REST call.
 
+> Important: this repository is **not SmartGridReady-certified**.
+> It may use SmartGridReady specifications, EID XML profiles, and the
+> official commhandler stack, but any formal SmartGridReady conformity
+> or EMS certification would require an explicit certification process
+> with SmartGridReady / the relevant test lab. Using SGr does not make
+> this add-on certified.
+
 ---
 
 ## What it does
@@ -264,6 +271,11 @@ such a label for code like this one, so claiming it would be marketing
 language with no referent. What you can verify in this repository: the
 commhandler dependency, the absence of manufacturer-specific I/O, and
 the EID-property propagation listed above.
+
+If SmartGridReady introduces or operationalises an EMS certification
+path for software like this add-on, that certification would still have
+to be obtained explicitly. This repository should therefore be read as
+"SGr-based" or "SGr-capable", **not** as certified by default.
 
 The optimisation layer (rules DSL, V2H safety, hysteresis, audit log)
 is the add-on's own engineering and is **not part of the SmartGridReady
