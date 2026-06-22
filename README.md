@@ -400,6 +400,9 @@ devices:
       ip: 192.168.1.60
       port: 502
       slave_id: 1
+    evse_safety:
+      safe_current: 6
+      max_receive_time_sec: 120
 
 rules:
   # Heat pump: write the SG-Ready command, NOT the read-only feedback.
@@ -422,6 +425,10 @@ rules:
     profile: "EMS_Current_Limit"
     data_point: "EMSCurrentLimit"
     min_interval: 5
+    smooth_transition:
+      window: 0
+      delay: 30
+      duration: 0
     conditions:
       - when: "surplus_pv > 3000"
         value: 16
@@ -458,6 +465,16 @@ sensors:
 ```
 
 Then in a rule: `when: "my_pool_temp < 22"`.
+
+`value:` also supports simple context templating:
+
+```yaml
+value: "{{ battery_soc }}"
+```
+
+The placeholder is expanded from the current rule context before the
+write. This is useful for scalar setpoints that should track a live HA
+value rather than a fixed constant.
 
 Missing entities don't crash anything: numeric ones resolve to `0.0`,
 booleans to `false`, and any rule that depends on them simply doesn't

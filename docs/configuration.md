@@ -121,6 +121,15 @@ devices:
       ip: 192.168.1.50
       port: 502
       slave_id: 1
+  - name: "Wallbox"
+    eid: SGr_04_mmmm_dddd_KEBA_KeContact_P30_V0.1
+    properties:
+      ip: 192.168.1.60
+      port: 502
+      slave_id: 1
+    evse_safety:
+      safe_current: 6
+      max_receive_time_sec: 120
 ```
 
 Always cross-check the EID identifier against the public catalogue
@@ -143,6 +152,18 @@ time.
 The EID XML is downloaded from the SGr library on first use and cached
 to `/share/smartgridready/cache/<eid>.xml`. Subsequent restarts are
 fully offline. To force a refresh, delete the cached file.
+
+### `evse_safety:`
+
+Optional, per device. Only useful for EV chargers whose EID exposes the
+optional watchdog helper data points `SafeCurrent` and
+`MaxReceiveTimeSec`.
+
+- `safe_current`: fallback current in amps when the EMS stops talking
+- `max_receive_time_sec`: watchdog timeout in seconds
+
+These values are written once at connect time and skipped silently when
+the EID does not declare the corresponding points.
 
 ### `enabled: false`
 
@@ -171,6 +192,23 @@ rules:
         value: HP_NORMAL
 ```
 
+Optional helper:
+
+```yaml
+  - device: "Wallbox"
+    profile: "EMS_Current_Limit"
+    data_point: "EMSCurrentLimit"
+    smooth_transition:
+      window: 0
+      delay: 30
+      duration: 0
+```
+
+When present, the engine attempts best-effort writes to the optional
+sub-data-points `*.SmoothTransition_Window`, `*.SmoothTransition_Delay`,
+and `*.SmoothTransition_Duration` before the main command. Missing
+sub-data-points are skipped silently.
+
 > **Pay attention to direction.** In every SGr functional profile,
 > each data point declares a direction: read-only (`R`), read-write
 > (`RW`), or write-only (`W`). You can only target `RW` and `W` data
@@ -184,6 +222,8 @@ Behaviour:
   first one whose `when` expression is true is applied. The optional
   `default:` entry (anywhere, but conventionally at the end) is the
   fallback when nothing matched.
+- **Template values.** `value:` may reference the current context with
+  `{{ key }}` placeholders, e.g. `value: "{{ battery_soc }}"`.
 - **Redundant writes are suppressed.** If the value is identical to
   the one written in the previous cycle, no I/O happens.
 - **Hysteresis.** `min_interval` is the minimum number of minutes

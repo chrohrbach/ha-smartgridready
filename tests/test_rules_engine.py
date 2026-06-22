@@ -84,6 +84,12 @@ def test_eval_equality(engine):
     assert engine._eval_expression("battery_soc == 76", {"battery_soc": 75}) is False
 
 
+def test_eval_string_equality(engine):
+    ctx = {"grid_signal_type": "sg_ready"}
+    assert engine._eval_expression("grid_signal_type == 'sg_ready'", ctx) is True
+    assert engine._eval_expression("grid_signal_type != 'load_reduction'", ctx) is True
+
+
 def test_eval_bare_boolean(engine):
     assert engine._eval_expression("is_peak", {"is_peak": True}) is True
     assert engine._eval_expression("is_peak", {"is_peak": False}) is False
@@ -140,6 +146,13 @@ def test_conditions_returns_none_when_no_match(engine):
         {"when": "spot_price > 0.99", "value": 2},
     ]
     assert engine._evaluate_conditions(conditions, {"spot_price": 0.12}) is None
+
+
+def test_conditions_render_template_value(engine):
+    conditions = [
+        {"when": "battery_soc == 75", "value": "{{ battery_soc }}"},
+    ]
+    assert engine._evaluate_conditions(conditions, {"battery_soc": 75}) == 75
 
 
 def test_get_matched_condition(engine):
@@ -215,6 +228,27 @@ async def test_evaluate_respects_hysteresis(engine, sgr_mock, sensors):
     result = await engine.evaluate(config)
     sgr_mock.write.assert_not_awaited()
     assert any(s["reason"] == "hysteresis" for s in result["skipped"])
+
+
+@pytest.mark.asyncio
+async def test_evaluate_applies_smooth_transition_before_write(engine, sgr_mock, sensors):
+    sgr_mock.write_if_exists = AsyncMock(return_value=True)
+    config = UserConfig(
+        sensors=sensors,
+        rules=[RuleConfig(
+            device="Wallbox",
+            profile="EMS_Current_Limit",
+            data_point="EMSCurrentLimit",
+            min_interval=0,
+            smooth_transition={"window": 0, "delay": 30, "duration": 0},
+            conditions=[{"default": True, "value": 16}],
+        )],
+    )
+    await engine.evaluate(config)
+    assert sgr_mock.write_if_exists.await_count == 3
+    sgr_mock.write.assert_awaited_once_with(
+        "Wallbox", "EMS_Current_Limit", "EMSCurrentLimit", 16
+    )
 
 
 # ---------------------------------------------------------------------------

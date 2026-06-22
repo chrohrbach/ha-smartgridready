@@ -64,6 +64,11 @@ devices:
       ip: 192.168.1.60
       port: 502
       slave_id: 1
+    # Optional EVSE watchdog. Written once at connect time when the
+    # EID exposes the corresponding helper data points.
+    evse_safety:
+      safe_current: 6
+      max_receive_time_sec: 120
 
   # Shelly Pro 3EM via local REST (basic auth):
   # - name: "Energy Meter"
@@ -122,6 +127,10 @@ rules:
     profile: "EMS_Current_Limit"
     data_point: "EMSCurrentLimit"
     min_interval: 5
+    smooth_transition:
+      window: 0
+      delay: 30
+      duration: 0
     conditions:
       # DSO curtailment is an override — beats every other clause.
       - when: "dso_curtailment_active"

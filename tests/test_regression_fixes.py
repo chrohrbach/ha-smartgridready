@@ -313,6 +313,63 @@ class TestDynamicParameterPassThrough:
                              parameters={"channel": "L1", "phase": "1"}))
         assert captured == [{"channel": "L1", "phase": "1"}]
 
+    def test_read_profile_reads_whole_profile(self):
+        profile = MagicMock()
+        profile.get_values_async = AsyncMock(return_value={"DP1": 42})
+        dev = MagicMock()
+        dev.get_functional_profile = MagicMock(return_value=profile)
+        cfg = DeviceConfig(name="TestDev", eid="x", properties={})
+        wrap = SGrDevice(cfg, device=dev)
+        wrap.connected = True
+        svc = SGrService(Path("/tmp/sgr-test"))
+        svc.devices["TestDev"] = wrap
+
+        result = asyncio.run(svc.read_profile("TestDev", "FP"))
+        assert result == {"DP1": 42}
+
+
+class TestOptionalWrites:
+
+    def _make_service_with_optional_dp(self, available: bool = True):
+        svc = SGrService(Path("/tmp/sgr-test"))
+        dp = MagicMock()
+        dp.set_value_async = AsyncMock()
+        dev = MagicMock()
+        dev.get_data_points = MagicMock(
+            return_value={("FP", "OptionalDP"): dp} if available else {}
+        )
+        dev.get_data_point = MagicMock(return_value=dp)
+        cfg = DeviceConfig(name="TestDev", eid="x", properties={})
+        wrap = SGrDevice(cfg, device=dev)
+        wrap.connected = True
+        svc.devices["TestDev"] = wrap
+        return svc, dp
+
+    def test_write_if_exists_writes_when_present(self):
+        svc, dp = self._make_service_with_optional_dp(available=True)
+        assert asyncio.run(svc.write_if_exists("TestDev", "FP", "OptionalDP", 7)) is True
+        dp.set_value_async.assert_awaited_once_with(7)
+
+    def test_write_if_exists_skips_when_missing(self):
+        svc, dp = self._make_service_with_optional_dp(available=False)
+        assert asyncio.run(svc.write_if_exists("TestDev", "FP", "OptionalDP", 7)) is False
+        dp.set_value_async.assert_not_called()
+
+    def test_evse_watchdog_writes_optional_points(self, tmp_path):
+        svc = SGrService(tmp_path)
+        svc.write_if_exists = AsyncMock(side_effect=[True, True])
+        asyncio.run(svc._configure_evse_watchdog(
+            "Wallbox",
+            {"safe_current": 6, "max_receive_time_sec": 120},
+            ["EMS_Current_Limit"],
+        ))
+        assert svc.write_if_exists.await_args_list[0].args == (
+            "Wallbox", "EMS_Current_Limit", "SafeCurrent", 6.0
+        )
+        assert svc.write_if_exists.await_args_list[1].args == (
+            "Wallbox", "EMS_Current_Limit", "MaxReceiveTimeSec", 120
+        )
+
 
 # ---------------------------------------------------------------------------
 # LevelOfOperation: exposed in to_dict, robust to missing fields

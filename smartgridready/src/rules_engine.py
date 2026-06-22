@@ -252,6 +252,13 @@ class RulesEngine:
                         })
                         continue
 
+                if rule.smooth_transition:
+                    await self._apply_smooth_transition(
+                        rule.device,
+                        rule.profile,
+                        rule.data_point,
+                        rule.smooth_transition,
+                    )
                 await self.sgr.write(rule.device, rule.profile, rule.data_point, value)
                 self._last_change_times[rule_id] = self._now_utc()
                 # V2H discharge is counted as a *cycle* only when the
@@ -859,9 +866,9 @@ class RulesEngine:
     ) -> Optional[Any]:
         for cond in conditions:
             if "default" in cond:
-                return cond.get("value")
+                return self._resolve_value(cond.get("value"), context)
             if self._eval_expression(str(cond.get("when", "")), context):
-                return cond.get("value")
+                return self._resolve_value(cond.get("value"), context)
         return None
 
     def _get_matched_condition(
@@ -913,10 +920,12 @@ class RulesEngine:
             if op in expr:
                 left, right = expr.split(op, 1)
                 key = left.strip()
-                val_str = right.strip().rstrip("h")
+                val_str = right.strip().strip("'\"")
                 try:
-                    compare = float(val_str)
+                    compare = float(val_str.rstrip("h"))
                 except (ValueError, TypeError):
+                    if op in ("==", "!="):
+                        return fn(str(ctx.get(key, "")), val_str)
                     self._warn_dsl(
                         expr,
                         f"right-hand side {val_str!r} is not numeric — "
@@ -927,6 +936,8 @@ class RulesEngine:
                 try:
                     actual = float(ctx.get(key, 0))
                 except (ValueError, TypeError):
+                    if op in ("==", "!="):
+                        return fn(str(ctx.get(key, "")), val_str)
                     self._warn_dsl(
                         expr,
                         f"left-hand side {key!r} resolved to a non-numeric value — "
@@ -944,6 +955,44 @@ class RulesEngine:
                 "your own in `sensors:`.",
             )
         return bool(ctx.get(expr, False))
+
+    def _resolve_value(self, value: Any, context: Dict[str, Any]) -> Any:
+        """Expand ``{{ key }}`` placeholders in rule values."""
+        if not isinstance(value, str) or "{{" not in value:
+            return value
+        rendered = re.sub(
+            r"\{\{\s*(\w+)\s*\}\}",
+            lambda m: str(context.get(m.group(1), m.group(0))),
+            value,
+        )
+        try:
+            return int(float(rendered))
+        except (ValueError, TypeError):
+            try:
+                return float(rendered)
+            except (ValueError, TypeError):
+                return rendered
+
+    async def _apply_smooth_transition(
+        self,
+        device_name: str,
+        fp: str,
+        dp: str,
+        st_config: Dict[str, Any],
+    ) -> None:
+        """Write optional SmoothTransition helper data points if present."""
+        if not hasattr(self.sgr, "write_if_exists"):
+            return
+        for sub_dp, raw in (
+            (f"{dp}.SmoothTransition_Window", st_config.get("window", 0)),
+            (f"{dp}.SmoothTransition_Delay", st_config.get("delay", 0)),
+            (f"{dp}.SmoothTransition_Duration", st_config.get("duration", 0)),
+        ):
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                continue
+            await self.sgr.write_if_exists(device_name, fp, sub_dp, value)
 
     def _warn_dsl(self, expr: str, detail: str) -> None:
         """Log a DSL diagnostic once per unique expression."""

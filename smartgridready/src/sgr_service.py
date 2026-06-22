@@ -235,6 +235,12 @@ class SGrService:
                 "Device %s (%s) connected — profiles: %s",
                 dev_cfg.name, dev_name, list(profiles.keys()),
             )
+            if dev_cfg.evse_safety:
+                await self._configure_evse_watchdog(
+                    dev_cfg.name,
+                    dev_cfg.evse_safety,
+                    list(profiles.keys()),
+                )
         except Exception:
             logger.info("Device %s connected", dev_cfg.name)
         return True
@@ -292,9 +298,38 @@ class SGrService:
         )
         logger.info("Wrote %s = %s on %s/%s", value, dp, device_name, fp)
 
+    async def write_if_exists(self, device_name: str, fp: str, dp: str, value: Any) -> bool:
+        """Write an optional data point if the EID exposes it.
+
+        Used for best-effort helper data points such as EVSE watchdog or
+        SmoothTransition parameters. Missing data points are skipped
+        silently and reported as ``False``.
+        """
+        try:
+            wrap = self._require_connected(device_name)
+        except (ValueError, ConnectionError):
+            return False
+        try:
+            data_points = wrap.device.get_data_points()
+            if (fp, dp) not in data_points:
+                logger.debug("Optional DP %s/%s/%s not in EID — skipped", device_name, fp, dp)
+                return False
+            await wrap.device.get_data_point((fp, dp)).set_value_async(value)
+            logger.debug("Wrote optional DP %s/%s/%s = %s", device_name, fp, dp, value)
+            return True
+        except Exception as exc:
+            logger.debug("Optional DP write %s/%s/%s failed: %s", device_name, fp, dp, exc)
+            return False
+
     async def read_all(self, device_name: str) -> Dict[Tuple[str, str], Any]:
         wrap = self._require_connected(device_name)
         return await wrap.device.get_values_async()
+
+    async def read_profile(self, device_name: str, fp: str) -> Dict[str, Any]:
+        """Read every data point of a single functional profile."""
+        wrap = self._require_connected(device_name)
+        profile = wrap.device.get_functional_profile(fp)
+        return await profile.get_values_async()
 
     async def _retry(self, operation, description: str, max_retries: int = MAX_RETRIES):
         last_error: Optional[Exception] = None
@@ -385,6 +420,39 @@ class SGrService:
                 continue
             for (fp_name, dp_name), dp in dps.items():
                 yield name, fp_name, dp_name, dp
+
+    async def _configure_evse_watchdog(
+        self,
+        device_name: str,
+        safety_config: Dict[str, Any],
+        known_profiles: List[str],
+    ) -> None:
+        """Best-effort EVSE watchdog configuration on connect.
+
+        If the EID declares the optional EVSE safety data points, write
+        them once so the charger falls back to a safe current when the
+        EMS goes silent.
+        """
+        candidate_profiles = [
+            p for p in known_profiles
+            if p in ("EMS_Current_Limit", "EVSECurrentLimit", "LoadReduction")
+        ] or ["EMS_Current_Limit"]
+
+        if "safe_current" in safety_config:
+            val = float(safety_config["safe_current"])
+            for fp in candidate_profiles:
+                if await self.write_if_exists(device_name, fp, "SafeCurrent", val):
+                    logger.info("Configured %s SafeCurrent=%.0fA on %s", fp, val, device_name)
+                    break
+
+        if "max_receive_time_sec" in safety_config:
+            val = int(safety_config["max_receive_time_sec"])
+            for fp in candidate_profiles:
+                if await self.write_if_exists(device_name, fp, "MaxReceiveTimeSec", val):
+                    logger.info(
+                        "Configured %s MaxReceiveTimeSec=%ds on %s", fp, val, device_name
+                    )
+                    break
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -62,6 +62,7 @@ class DeviceConfig:
     eid: str
     enabled: bool = True
     properties: Dict[str, Any] = field(default_factory=dict)
+    evse_safety: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -71,6 +72,7 @@ class RuleConfig:
     data_point: str
     min_interval: int = 15
     conditions: List[Dict[str, Any]] = field(default_factory=list)
+    smooth_transition: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -176,6 +178,9 @@ devices:
   #     ip: 192.168.1.60
   #     port: 502
   #     slave_id: 1
+  #   evse_safety:
+  #     safe_current: 6
+  #     max_receive_time_sec: 120
 
   # Energy meter (local REST with basic auth) — Shelly Pro 3EM
   # - name: "Shelly 3EM"
@@ -209,6 +214,23 @@ rules: []
   #       value: HP_LOCKED
   #     - default:
   #       value: HP_NORMAL
+
+  # Example: EV current limit with optional SmoothTransition helper
+  # sub-data-points. These writes are best-effort and silently skipped
+  # when the device EID does not declare them.
+  # - device: "Wallbox"
+  #   profile: "EMS_Current_Limit"
+  #   data_point: "EMSCurrentLimit"
+  #   min_interval: 5
+  #   smooth_transition:
+  #     window: 0
+  #     delay: 30
+  #     duration: 0
+  #   conditions:
+  #     - when: "surplus_pv > 3000"
+  #       value: 16
+  #     - default:
+  #       value: 8
 
 # -- Vehicles (V2H / V2G) ---------------------------------------------
 # Optional. Required to allow negative current targets (bidirectional
@@ -276,6 +298,7 @@ def load_user_config(config_path: Path) -> UserConfig:
             eid=str(d.get("eid", "")).strip(),
             enabled=bool(d.get("enabled", True)),
             properties=dict(d.get("properties") or {}),
+            evse_safety=dict(d.get("evse_safety") or {}),
         )
         for d in (raw.get("devices") or [])
         if isinstance(d, dict) and d.get("name") and d.get("eid")
@@ -288,6 +311,7 @@ def load_user_config(config_path: Path) -> UserConfig:
             data_point=str(r.get("data_point", "")).strip(),
             min_interval=int(r.get("min_interval", 15)),
             conditions=list(r.get("conditions") or []),
+            smooth_transition=dict(r.get("smooth_transition") or {}),
         )
         for r in (raw.get("rules") or [])
         if isinstance(r, dict) and r.get("device") and r.get("profile") and r.get("data_point")
