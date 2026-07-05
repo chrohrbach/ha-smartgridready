@@ -13,7 +13,10 @@ grid_connection_limit_w: …    # optional PCC limit in watts (L5 helpers)
 battery_capacity_kwh: …       # optional home-battery capacity (L7 helpers)
 devices: [ … ]                # SGr devices to connect to
 rules: [ … ]                  # optimisation rules
-vehicles: [ … ]               # V2H / V2G vehicle declarations (optional)
+vehicles: [ … ]                # V2H / V2G vehicle declarations (optional)
+pv_arrays: [ … ]               # self-computed PV forecast arrays (optional)
+virtual_devices: [ … ]         # non-SGr devices piloted via HA services (optional)
+optimizer: { … }               # opt-in predictive-dispatch MILP (optional)
 ```
 
 A complete working example is in
@@ -173,6 +176,103 @@ temporarily offline.
 
 ---
 
+## `virtual_devices:`
+
+Optional. Lets `rules:` target ordinary Home Assistant entities
+(`climate`, `switch`, `water_heater`, `number`) using the **same
+SG-Ready state literals** already used for real SGr devices
+(`HP_LOCKED` / `HP_NORMAL` / `HP_INTENSIFIED` / `HP_FORCED`) — one rule
+vocabulary covers both. Reference the virtual device's `name:` as a
+rule's `device:` — no `eid` required, no SGr connection is attempted
+for it.
+
+> **Important:** this is a **Home Assistant orchestration layer**, not
+> native SmartGridready communication. It is useful for hardware that
+> has no digital SGr interface at all (a heat pump controlled only
+> through its native HA climate entity, an EV charger or boiler behind
+> a simple relay, an inverter limit exposed only as an HA `number`) but
+> it is **not** evidence of SmartGridready conformity — see
+> [scope-and-gaps.md §3.13](scope-and-gaps.md#313-virtual-devices--ha-proxy-layer).
+
+Four types are supported:
+
+```yaml
+virtual_devices:
+  # PAC without a digital SGr interface — offset from a base setpoint.
+  - name: "Heat pump (no SGr interface)"
+    type: climate_proxy
+    climate_entities: [climate.living_room]   # one or more climate.* entities
+    base_setpoint_default: 21.0                # °C, used when base_setpoint_entity is unset
+    base_setpoint_entity: input_number.target_temp  # optional — live base instead of the default
+    min_setpoint: 16.0
+    max_setpoint: 24.0
+    sg_ready_to_offset:                        # °C offset added to the base setpoint
+      HP_LOCKED: -3.0
+      HP_NORMAL: 0.0
+      HP_INTENSIFIED: 1.5
+      HP_FORCED: 3.0
+
+  # EV charger / boiler behind a simple relay.
+  - name: "Boiler (Shelly relay)"
+    type: switch_proxy
+    switch_entities: [switch.boiler]           # one or more switch.* entities
+    sg_ready_to_switch:
+      HP_LOCKED: off
+      HP_NORMAL: off
+      HP_INTENSIFIED: on
+      HP_FORCED: on
+
+  # Water heater with its own thermostat entity.
+  - name: "Water heater"
+    type: boiler_proxy
+    water_heater_entity: water_heater.tank     # exactly one water_heater.* entity
+    min_temperature: 45.0
+    max_temperature: 65.0
+    sg_ready_to_temperature:                   # °C target
+      HP_LOCKED: 45
+      HP_NORMAL: 50
+      HP_INTENSIFIED: 55
+      HP_FORCED: 65
+
+  # Inverter export/charge limit or any numeric setpoint.
+  - name: "Inverter charge power limit"
+    type: number_proxy
+    number_entities: [number.inverter_charge_power_limit]
+    min_value: 0
+    max_value: 5000
+    sg_ready_to_value:
+      HP_LOCKED: 0
+      HP_NORMAL: 1500
+      HP_INTENSIFIED: 3000
+      HP_FORCED: 5000
+```
+
+Then reference it from `rules:` exactly like a real device:
+
+```yaml
+rules:
+  - device: "Boiler (Shelly relay)"    # matches a virtual_devices[].name
+    profile: "SG-ReadyStates"          # kept for consistency; ignored for virtual devices
+    data_point: "SGReadyOpModeCmd"     # kept for consistency; ignored for virtual devices
+    conditions:
+      - when: "has_surplus"
+        value: HP_FORCED
+      - default:
+        value: HP_NORMAL
+```
+
+Mapping keys are case-insensitive (`HP_LOCKED` and `hp_locked` are
+equivalent) and matched against whatever the rule's `value:` resolves
+to at evaluation time. A state with no entry in the mapping table is
+skipped (logged as `virtual_device_error` in the audit trail) rather
+than guessed at.
+
+`smooth_transition:` and EVSE `evse_safety:` do not apply to virtual
+devices — both are SGr EID sub-data-point concepts with no HA service
+equivalent.
+
+---
+
 ## `rules:`
 
 A list of optimisation rules evaluated on every cycle (default every
@@ -277,6 +377,134 @@ no matter what the rule asks for.
 
 ---
 
+## `pv_arrays:`
+
+Optional. Only needed if you have **no** Forecast.Solar (or similar)
+integration mapped under `sensors.pv_forecast_kwh`. When at least one
+array is declared here, the add-on fetches solar irradiance from the
+free [Open-Meteo](https://open-meteo.com) API every few hours and
+estimates production itself — no external PV-forecast integration
+required.
+
+```yaml
+pv_arrays:
+  - name: "Roof south"
+    kwp: 6.5              # nameplate peak power, kWp
+    tilt: 30                # degrees from horizontal (optional)
+    azimuth: 180             # 0=N, 90=E, 180=S, 270=W (optional)
+    efficiency: 0.80         # system losses factor, default 0.80
+    enabled: true            # optional, default true
+```
+
+`tilt`/`azimuth` are optional: without them the forecast uses plain
+(untransposed) global horizontal irradiance — still a reasonable
+estimate for a roughly south-facing residential roof, just less
+accurate for steeply tilted or non-south-facing arrays.
+
+The array does **not** need to correspond to an SGr-connected device —
+it is independent of `devices:` and purely nameplate metadata for the
+forecast calculation.
+
+Home coordinates come from the add-on options `latitude`/`longitude`
+when set, otherwise from HA's own `GET /api/config` (the location you
+already configured during HA onboarding). The result fills
+`pv_forecast_kwh` / `pv_forecast_today_kwh` / `pv_forecast_next_4h_kwh`
+in the rule DSL, but **only** when `sensors.pv_forecast_kwh` is not
+mapped or reads `0` — a real sensor mapping always takes priority.
+
+---
+
+## `optimizer:`
+
+Optional, **disabled by default** (`enabled: false`). The `rules:`
+engine (condition → value, evaluated every cycle) remains the primary
+and only *required* optimisation mechanism — `optimizer:` adds a
+second, opt-in layer: a genuine predictive-dispatch **MILP**
+(mixed-integer linear program) that jointly schedules controllable
+devices, the home battery, and the grid connection over a 24 h horizon
+to minimise cost, instead of reacting condition-by-condition.
+
+```yaml
+optimizer:
+  enabled: true
+  devices:
+    - name: "Wallbox"          # free-form label — not necessarily a devices[]/virtual_devices[] name
+      min_power_w: 0
+      max_power_w: 11000
+      must_run_hours: 0         # 0 = no minimum energy requirement
+      preferred_window: [22, 6] # optional, wraps midnight; omit for "any hour"
+      priority: 50              # currently informational (tie-breaking is price-driven)
+      switchable: false         # true = binary on/off unit commitment instead of continuous power
+      voltage: 230              # used only to also expose a `_current_a` context variable
+      phases: 1
+  battery:
+    capacity_kwh: 10            # defaults to the top-level battery_capacity_kwh if omitted
+    max_charge_w: 5000
+    max_discharge_w: 5000
+    soc_min_pct: 10
+    soc_max_pct: 95
+    efficiency: 0.95            # round-trip efficiency
+    cycle_cost_chf_kwh: 0.01    # small per-kWh throughput cost — discourages pointless cycling
+  grid:
+    pcc_import_w: 25000         # defaults to the top-level grid_connection_limit_w if omitted
+    pcc_export_w: 12000
+    export_price_chf_kwh: 0.08  # feed-in tariff
+```
+
+### How the schedule reaches a device
+
+The optimizer **does not write anything itself**. It computes a
+24 h `device name → [W per hour]` schedule (recomputed every 30
+minutes from the current price forecast, PV forecast, and battery SoC)
+and exposes it as new rules-DSL context variables:
+
+| Variable | Meaning |
+|---|---|
+| `optimizer_enabled` | `true` when `optimizer.enabled: true` and at least one device is registered |
+| `optimizer_<slug>_power_w` | this hour's scheduled power, in watts (`<slug>` = the device `name`, lower-cased/snake-cased) |
+| `optimizer_<slug>_current_a` | the same value converted to amps via `power_w / (voltage · phases)` — a plain approximation, not 3-phase-accurate, useful for profiles like `EMS_Current_Limit` that expect amps |
+| `optimizer_<slug>_on` | `true` when the scheduled power is > 0 |
+| `optimizer_savings_chf` | estimated savings vs. a naive flat-price baseline, over the 24 h horizon |
+| `optimizer_self_consumption_pct` | estimated PV self-consumption % under the computed schedule |
+
+You still write a normal `rules:` entry (targeting a real SGr device or
+a `virtual_devices:` entry) to actually apply it:
+
+```yaml
+rules:
+  - device: "Wallbox"                       # a real devices[] or virtual_devices[] name
+    profile: "EMS_Current_Limit"
+    data_point: "EMSCurrentLimit"
+    conditions:
+      - default:
+        value: "{{ optimizer_wallbox_current_a }}"
+```
+
+This keeps the existing rules engine as the single write path —
+hysteresis, redundant-write skipping, the audit log, and the real/
+virtual device dispatch all still apply, exactly as for any other rule.
+The DSL's `{{ key }}` templating only substitutes — it does not do
+arithmetic — so pick whichever context variable (`_power_w` or
+`_current_a`) already matches the target data point's unit.
+
+### Solver: MILP with a greedy fallback
+
+The MILP solver (`scipy.optimize.milp`) is used when `scipy` is
+installed; otherwise the optimizer transparently falls back to a
+greedy heuristic (cheapest hours first, respecting `must_run_hours`
+and `preferred_window`) — still useful, just not provably optimal.
+
+**`scipy` is deliberately not part of this add-on's `requirements.txt`.**
+This add-on ships for `amd64`, `aarch64` **and `armv7`** — scipy/numpy
+wheels aren't reliably prebuilt for 32-bit ARM on every Python version,
+and a from-source fallback (needing BLAS/LAPACK/gfortran on Alpine)
+would be slow and could outright fail the image build. If you maintain
+your own image build and want the real MILP solver, add `scipy>=1.11`
+to `requirements.txt` yourself — the code already prefers it when
+present.
+
+---
+
 ## Add-on options (reminder)
 
 The four settings below sit in the add-on **Configuration** tab in
@@ -293,3 +521,5 @@ Home Assistant, **not** in the user config file:
 | `timezone`            | `Europe/Zurich`                  | local zone for `hour` / `is_peak` / `allow_window` / DST |
 | `align_to_quarter`    | `false`                          | delay first tick so cadence sits on HH:00 / 15 / 30 / 45 |
 | `sg_ready_lock_cap_minutes` | `120`                      | BWP SG-Ready Mode-1 (HP_LOCKED) cap per 24 h; 0 disables |
+| `latitude`            | *(unset)*                        | override home latitude for the `pv_arrays:` forecast; falls back to HA's own location |
+| `longitude`           | *(unset)*                        | override home longitude for the `pv_arrays:` forecast; falls back to HA's own location |

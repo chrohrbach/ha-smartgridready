@@ -6,3 +6,11 @@ uvicorn[standard]>=0.27
 jinja2>=3.1
 asyncio-mqtt>=0.16
 python-multipart>=0.0.9
+
+# scipy is deliberately NOT listed here. The opt-in `optimizer:` feature
+# uses scipy.optimize.milp when available and falls back to a greedy
+# heuristic otherwise (src/optimizer.py). Pinning scipy would risk build
+# failures on armv7 (no guaranteed prebuilt wheel — worst case is a slow
+# from-source compile needing BLAS/LAPACK/gfortran on Alpine). If you
+# maintain your own image build and want the real MILP solver, add
+# `scipy>=1.11` yourself.

@@ -87,12 +87,144 @@ class VehicleConfig:
 
 
 @dataclass
+class PvArrayConfig:
+    """A PV array registered for the self-computed Open-Meteo forecast.
+
+    Declared independently of ``devices:`` because the array does not
+    need to be an SGr-labelled/connected device at all — this is purely
+    nameplate metadata used to estimate production from solar
+    irradiance. ``tilt``/``azimuth`` are optional: without them the
+    forecast falls back to plain (untransposed) global horizontal
+    irradiance, which is still a reasonable estimate for a roughly
+    south-facing residential roof.
+    """
+
+    name: str
+    kwp: float
+    tilt: Optional[float] = None
+    azimuth: Optional[float] = None
+    efficiency: float = 0.80
+    enabled: bool = True
+
+
+# Recognised ``virtual_devices[].type`` values and the YAML keys that hold
+# their target entities / SG-Ready mapping table. Shared with the parser
+# below and with ``virtual_devices.py`` (which imports the tuple for
+# validation instead of re-declaring it).
+VIRTUAL_DEVICE_TYPES = ("climate_proxy", "switch_proxy", "boiler_proxy", "number_proxy")
+
+_VIRTUAL_TARGET_KEYS = {
+    "climate_proxy": "climate_entities",
+    "switch_proxy": "switch_entities",
+    "number_proxy": "number_entities",
+}
+_VIRTUAL_MAPPING_KEYS = {
+    "climate_proxy": "sg_ready_to_offset",
+    "switch_proxy": "sg_ready_to_switch",
+    "boiler_proxy": "sg_ready_to_temperature",
+    "number_proxy": "sg_ready_to_value",
+}
+
+
+@dataclass
+class VirtualDeviceConfig:
+    """A non-SGr device piloted via plain Home Assistant service calls.
+
+    Lets the rules engine target ordinary HA entities (``climate.*``,
+    ``switch.*``, ``water_heater.*``, ``number.*``) using the exact same
+    SG-Ready state literals (``HP_LOCKED`` / ``HP_NORMAL`` /
+    ``HP_INTENSIFIED`` / ``HP_FORCED``) already used for real SGr
+    devices — one rule vocabulary covers both. This is a **Home
+    Assistant orchestration layer**, not native SmartGridready
+    communication — see docs/scope-and-gaps.md §3.13.
+    """
+
+    name: str
+    type: str  # one of VIRTUAL_DEVICE_TYPES
+    enabled: bool = True
+    targets: List[str] = field(default_factory=list)
+    # SG-Ready state literal (upper-cased) -> value. Meaning depends on
+    # ``type``: offset in °C (climate_proxy), bool (switch_proxy),
+    # target temperature in °C (boiler_proxy), or a raw number
+    # (number_proxy).
+    mapping: Dict[str, Any] = field(default_factory=dict)
+    base_setpoint_default: float = 21.0
+    base_setpoint_entity: Optional[str] = None
+    min_setpoint: float = 16.0
+    max_setpoint: float = 24.0
+    min_value: float = 0.0
+    max_value: float = 100.0
+
+
+@dataclass
+class OptimizerDeviceConfig:
+    """One controllable load registered with the predictive-dispatch
+    optimizer (MILP, ``scipy.optimize.milp`` — falls back to a greedy
+    heuristic when scipy is unavailable).
+
+    ``name`` is a free-form label, not necessarily a ``devices:`` or
+    ``virtual_devices:`` name — the optimizer only *computes* a
+    schedule. Wiring the scheduled watts/amps into an actual write is
+    the user's job via a normal ``rules:`` entry referencing the
+    injected context variables (``optimizer_<slug>_power_w`` /
+    ``_current_a`` / ``_on``). See docs/configuration.md#optimizer.
+    """
+
+    name: str
+    min_power_w: float = 0.0
+    max_power_w: float = 3000.0
+    must_run_hours: int = 0
+    preferred_window: Optional[List[int]] = None  # [start_hour, end_hour], wraps midnight
+    priority: int = 50
+    switchable: bool = False
+    # Used to also expose a `_current_a` context variable for profiles
+    # that expect amps (e.g. EMS_Current_Limit) rather than watts.
+    voltage: float = 230.0
+    phases: int = 1
+
+
+@dataclass
+class OptimizerBatteryConfig:
+    capacity_kwh: float = 0.0
+    max_charge_w: float = 0.0
+    max_discharge_w: float = 0.0
+    soc_min_pct: float = 10.0
+    soc_max_pct: float = 95.0
+    efficiency: float = 0.95
+    cycle_cost_chf_kwh: float = 0.01
+
+
+@dataclass
+class OptimizerGridConfig:
+    pcc_import_w: float = 25000.0
+    pcc_export_w: float = 12000.0
+    export_price_chf_kwh: float = 0.08
+
+
+@dataclass
+class OptimizerConfig:
+    """Top-level ``optimizer:`` section — opt-in predictive dispatch.
+
+    Disabled (``enabled: false``) by default: the DSL ``rules:`` engine
+    remains the primary — and only required — optimisation mechanism.
+    """
+
+    enabled: bool = False
+    devices: List[OptimizerDeviceConfig] = field(default_factory=list)
+    battery: OptimizerBatteryConfig = field(default_factory=OptimizerBatteryConfig)
+    grid: OptimizerGridConfig = field(default_factory=OptimizerGridConfig)
+
+
+@dataclass
 class UserConfig:
     sensors: SensorMap = field(default_factory=SensorMap)
     enable_toggle: Optional[str] = None
     devices: List[DeviceConfig] = field(default_factory=list)
     rules: List[RuleConfig] = field(default_factory=list)
     vehicles: List[VehicleConfig] = field(default_factory=list)
+    pv_arrays: List[PvArrayConfig] = field(default_factory=list)
+    virtual_devices: List[VirtualDeviceConfig] = field(default_factory=list)
+    optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     # Watts at the point of common coupling that must not be exceeded
     # (sum of grid_import, signed). 0 disables the headroom helpers.
     grid_connection_limit_w: float = 0.0
@@ -238,6 +370,85 @@ rules: []
 # explicitly enables v2h.
 
 vehicles: []
+
+# -- PV arrays (self-computed forecast) --------------------------------
+# Optional. Declared independently of `devices:` — the array does not
+# need to be an SGr-labelled/connected device. When at least one array
+# is listed here, the add-on fetches solar irradiance from Open-Meteo
+# every few hours and estimates production, filling `pv_forecast_kwh` /
+# `pv_forecast_today_kwh` / `pv_forecast_next_4h_kwh` in the rule DSL
+# whenever no `sensors.pv_forecast_kwh` entity is mapped (e.g. no
+# Forecast.Solar integration installed). Home coordinates come from the
+# add-on options `latitude`/`longitude`, or from HA's own location if
+# left unset.
+#
+# pv_arrays:
+#   - name: "Roof south"
+#     kwp: 6.5              # nameplate peak power, kWp
+#     tilt: 30               # degrees from horizontal (optional)
+#     azimuth: 180            # 0=N, 90=E, 180=S, 270=W (optional)
+#     efficiency: 0.80        # system losses factor (default 0.80)
+
+pv_arrays: []
+
+# -- Virtual devices (non-SGr, piloted via HA services) ----------------
+# Optional. Lets `rules:` target ordinary Home Assistant entities
+# (climate / switch / water_heater / number) with the same SG-Ready
+# state literals used for real SGr devices (HP_LOCKED / HP_NORMAL /
+# HP_INTENSIFIED / HP_FORCED) — one rule vocabulary for both. This is
+# a Home Assistant orchestration layer, NOT native SmartGridready
+# communication (see docs/scope-and-gaps.md §3.13). Reference the
+# virtual device's `name:` as the rule's `device:` — no `eid` needed.
+#
+# virtual_devices:
+#   # PAC without a digital SGr interface — offset from a base setpoint.
+#   - name: "Heat pump (no SGr interface)"
+#     type: climate_proxy
+#     climate_entities: [climate.living_room]
+#     base_setpoint_default: 21.0
+#     min_setpoint: 16.0
+#     max_setpoint: 24.0
+#     sg_ready_to_offset:
+#       HP_LOCKED: -3.0
+#       HP_NORMAL: 0.0
+#       HP_INTENSIFIED: 1.5
+#       HP_FORCED: 3.0
+#
+#   # EV charger / boiler behind a simple relay.
+#   - name: "Boiler (Shelly relay)"
+#     type: switch_proxy
+#     switch_entities: [switch.boiler]
+#     sg_ready_to_switch:
+#       HP_LOCKED: off
+#       HP_NORMAL: off
+#       HP_INTENSIFIED: on
+#       HP_FORCED: on
+#
+#   # Water heater with its own thermostat entity.
+#   - name: "Water heater"
+#     type: boiler_proxy
+#     water_heater_entity: water_heater.tank
+#     min_temperature: 45.0
+#     max_temperature: 65.0
+#     sg_ready_to_temperature:
+#       HP_LOCKED: 45
+#       HP_NORMAL: 50
+#       HP_INTENSIFIED: 55
+#       HP_FORCED: 65
+#
+#   # Inverter export/charge limit or any numeric setpoint.
+#   - name: "Inverter charge power limit"
+#     type: number_proxy
+#     number_entities: [number.inverter_charge_power_limit]
+#     min_value: 0
+#     max_value: 5000
+#     sg_ready_to_value:
+#       HP_LOCKED: 0
+#       HP_NORMAL: 1500
+#       HP_INTENSIFIED: 3000
+#       HP_FORCED: 5000
+
+virtual_devices: []
 """
 
 
@@ -331,6 +542,90 @@ def load_user_config(config_path: Path) -> UserConfig:
         if isinstance(v, dict)
     ]
 
+    pv_arrays = []
+    for a in (raw.get("pv_arrays") or []):
+        if not isinstance(a, dict):
+            continue
+        try:
+            kwp_val = float(a.get("kwp") or 0)
+        except (TypeError, ValueError):
+            continue
+        if kwp_val <= 0:
+            continue
+        tilt = a.get("tilt")
+        azimuth = a.get("azimuth")
+        pv_arrays.append(PvArrayConfig(
+            name=str(a.get("name", "")).strip() or "pv",
+            kwp=kwp_val,
+            tilt=float(tilt) if tilt is not None else None,
+            azimuth=float(azimuth) if azimuth is not None else None,
+            efficiency=float(a.get("efficiency", 0.80) or 0.80),
+            enabled=bool(a.get("enabled", True)),
+        ))
+
+    virtual_devices = []
+    for vd in (raw.get("virtual_devices") or []):
+        if not isinstance(vd, dict):
+            continue
+        vtype = str(vd.get("type", "")).strip()
+        if vtype not in VIRTUAL_DEVICE_TYPES:
+            continue
+        name = str(vd.get("name", "")).strip()
+        if not name or not bool(vd.get("enabled", True)):
+            continue
+
+        if vtype == "boiler_proxy":
+            wh = vd.get("water_heater_entity")
+            targets = [wh] if wh else []
+        else:
+            targets = list(vd.get(_VIRTUAL_TARGET_KEYS[vtype]) or [])
+        if not targets:
+            continue
+
+        raw_mapping = vd.get(_VIRTUAL_MAPPING_KEYS[vtype]) or {}
+        mapping: Dict[str, Any] = {}
+        for k, v in raw_mapping.items():
+            key = str(k).strip().upper()
+            if vtype == "switch_proxy":
+                if isinstance(v, bool):
+                    mapping[key] = v
+                elif isinstance(v, str):
+                    mapping[key] = v.strip().lower() in ("on", "true", "1", "yes")
+                elif isinstance(v, (int, float)):
+                    mapping[key] = v != 0
+                else:
+                    mapping[key] = False
+            else:
+                try:
+                    mapping[key] = float(v)
+                except (TypeError, ValueError):
+                    continue
+
+        # Bounds: boiler_proxy uses temperature-flavoured YAML keys for
+        # readability (min_temperature/max_temperature); everything else
+        # (number_proxy) uses the generic min_value/max_value. Both are
+        # stored uniformly on VirtualDeviceConfig.min_value/max_value.
+        if vtype == "boiler_proxy":
+            min_val = float(vd.get("min_temperature", 45.0) or 45.0)
+            max_val = float(vd.get("max_temperature", 65.0) or 65.0)
+        else:
+            min_val = float(vd.get("min_value", 0.0) or 0.0)
+            max_val = float(vd.get("max_value", 100.0) or 100.0)
+
+        virtual_devices.append(VirtualDeviceConfig(
+            name=name,
+            type=vtype,
+            enabled=True,
+            targets=targets,
+            mapping=mapping,
+            base_setpoint_default=float(vd.get("base_setpoint_default", 21.0) or 21.0),
+            base_setpoint_entity=vd.get("base_setpoint_entity"),
+            min_setpoint=float(vd.get("min_setpoint", 16.0) or 16.0),
+            max_setpoint=float(vd.get("max_setpoint", 24.0) or 24.0),
+            min_value=min_val,
+            max_value=max_val,
+        ))
+
     try:
         grid_limit = float(raw.get("grid_connection_limit_w") or 0)
     except (TypeError, ValueError):
@@ -340,12 +635,64 @@ def load_user_config(config_path: Path) -> UserConfig:
     except (TypeError, ValueError):
         battery_kwh = 0.0
 
+    opt_raw = raw.get("optimizer") or {}
+    optimizer = OptimizerConfig()
+    if isinstance(opt_raw, dict):
+        opt_devices = []
+        for d in (opt_raw.get("devices") or []):
+            if not isinstance(d, dict) or not d.get("name"):
+                continue
+            window = d.get("preferred_window")
+            opt_devices.append(OptimizerDeviceConfig(
+                name=str(d["name"]).strip(),
+                min_power_w=float(d.get("min_power_w", 0) or 0),
+                max_power_w=float(d.get("max_power_w", 3000) or 3000),
+                must_run_hours=int(d.get("must_run_hours", 0) or 0),
+                preferred_window=[int(window[0]), int(window[1])] if isinstance(window, list) and len(window) == 2 else None,
+                priority=int(d.get("priority", 50) or 50),
+                switchable=bool(d.get("switchable", False)),
+                voltage=float(d.get("voltage", 230.0) or 230.0),
+                phases=int(d.get("phases", 1) or 1),
+            ))
+
+        bat_raw = opt_raw.get("battery") or {}
+        # Defaults to the top-level battery_capacity_kwh when not overridden,
+        # so users don't have to declare the same capacity twice.
+        battery = OptimizerBatteryConfig(
+            capacity_kwh=float(bat_raw.get("capacity_kwh", battery_kwh) or 0),
+            max_charge_w=float(bat_raw.get("max_charge_w", 0) or 0),
+            max_discharge_w=float(bat_raw.get("max_discharge_w", 0) or 0),
+            soc_min_pct=float(bat_raw.get("soc_min_pct", 10.0) or 10.0),
+            soc_max_pct=float(bat_raw.get("soc_max_pct", 95.0) or 95.0),
+            efficiency=float(bat_raw.get("efficiency", 0.95) or 0.95),
+            cycle_cost_chf_kwh=float(bat_raw.get("cycle_cost_chf_kwh", 0.01) or 0.01),
+        )
+
+        grid_raw = opt_raw.get("grid") or {}
+        # Defaults to the top-level grid_connection_limit_w when not
+        # overridden — same reasoning as the battery capacity above.
+        grid_cfg = OptimizerGridConfig(
+            pcc_import_w=float(grid_raw.get("pcc_import_w", grid_limit) or grid_limit or 25000.0),
+            pcc_export_w=float(grid_raw.get("pcc_export_w", 12000.0) or 12000.0),
+            export_price_chf_kwh=float(grid_raw.get("export_price_chf_kwh", 0.08) or 0.08),
+        )
+
+        optimizer = OptimizerConfig(
+            enabled=bool(opt_raw.get("enabled", False)),
+            devices=opt_devices,
+            battery=battery,
+            grid=grid_cfg,
+        )
+
     return UserConfig(
         sensors=sensors,
         enable_toggle=raw.get("enable_toggle"),
         devices=devices,
         rules=rules,
         vehicles=vehicles,
+        pv_arrays=pv_arrays,
+        virtual_devices=virtual_devices,
+        optimizer=optimizer,
         grid_connection_limit_w=grid_limit,
         battery_capacity_kwh=battery_kwh,
         raw=raw,

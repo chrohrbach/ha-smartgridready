@@ -116,6 +116,9 @@ class RulesEngine:
         audit_path: Path,
         tz_name: str = "Europe/Zurich",
         sg_ready_lock_cap_minutes: int = DEFAULT_SG_READY_LOCK_CAP_MINUTES,
+        pv_forecast_service=None,
+        virtual_devices=None,
+        optimizer=None,
     ):
         self.sgr = sgr_service
         self.ha = ha_client
@@ -123,6 +126,19 @@ class RulesEngine:
         self.tz_name = tz_name or "Europe/Zurich"
         self.sg_ready_lock_cap_minutes = max(0, int(sg_ready_lock_cap_minutes))
         self._tz = self._resolve_tz(self.tz_name)
+        # Optional fallback PV forecast source (self-computed via Open-Meteo)
+        # used when the user has no sensors.pv_forecast_kwh mapped. See
+        # pv_forecast.PvForecastService.
+        self.pv_forecast_service = pv_forecast_service
+        # Optional registry of virtual (non-SGr) devices piloted via plain
+        # HA service calls. See virtual_devices.VirtualDeviceManager.
+        self.virtual_devices = virtual_devices
+        # Optional predictive-dispatch optimizer (opt-in via
+        # `optimizer.enabled: true`). See optimizer.SGrOptimizer — its
+        # computed schedule is exposed as context variables, consumed by
+        # normal `rules:` entries (real or virtual devices) rather than
+        # writing anything itself.
+        self.optimizer = optimizer
         # Hysteresis state lives next to the audit log so both survive
         # add-on restarts. Without persistence a reboot resets the
         # min_interval counter — a heat-pump compressor could be commanded
@@ -195,6 +211,7 @@ class RulesEngine:
             state_map,
             grid_connection_limit_w=config.grid_connection_limit_w,
             battery_capacity_kwh=config.battery_capacity_kwh,
+            optimizer_devices=config.optimizer.devices,
         )
         actions_taken: List[Dict[str, Any]] = []
         actions_skipped: List[Dict[str, Any]] = []
@@ -252,14 +269,29 @@ class RulesEngine:
                         })
                         continue
 
-                if rule.smooth_transition:
-                    await self._apply_smooth_transition(
-                        rule.device,
-                        rule.profile,
-                        rule.data_point,
-                        rule.smooth_transition,
-                    )
-                await self.sgr.write(rule.device, rule.profile, rule.data_point, value)
+                # Virtual (non-SGr) devices are dispatched through plain HA
+                # service calls instead of an SGr write — same rule
+                # vocabulary, different transport. See virtual_devices.py.
+                # SmoothTransition is an SGr EID sub-data-point concept and
+                # does not apply to virtual devices.
+                is_virtual_device = bool(self.virtual_devices and self.virtual_devices.has(rule.device))
+                if is_virtual_device:
+                    vd_result = await self.virtual_devices.apply(rule.device, value, self.ha, state_map)
+                    if not vd_result.get("applied"):
+                        actions_skipped.append({
+                            "rule": rule_id, "reason": "virtual_device_error",
+                            "value": value, "detail": vd_result.get("reason"),
+                        })
+                        continue
+                else:
+                    if rule.smooth_transition:
+                        await self._apply_smooth_transition(
+                            rule.device,
+                            rule.profile,
+                            rule.data_point,
+                            rule.smooth_transition,
+                        )
+                    await self.sgr.write(rule.device, rule.profile, rule.data_point, value)
                 self._last_change_times[rule_id] = self._now_utc()
                 # V2H discharge is counted as a *cycle* only when the
                 # written value transitions from a non-negative (or
@@ -315,6 +347,65 @@ class RulesEngine:
         except Exception:
             logger.debug("SG-Ready lock ledger persistence failed", exc_info=True)
         return result
+
+    # ------------------------------------------------------------------
+    # Predictive-dispatch optimizer (opt-in)
+    # ------------------------------------------------------------------
+
+    async def run_optimizer(self, config: UserConfig) -> Optional[Dict[str, Any]]:
+        """Gather forecasts and (re)compute the optimizer's 24h schedule.
+
+        Called on its own cadence (main.py, less frequently than
+        ``evaluate()`` — forecasts don't change fast enough to justify
+        recomputing every 5 min). The result is cached by the optimizer
+        itself; ``evaluate()``'s next cycle picks it up automatically via
+        ``_build_optimizer_context``.
+
+        Returns the result dict, or ``None`` when the optimizer is
+        disabled or has no devices registered.
+        """
+        if not self.optimizer or not self.optimizer.enabled:
+            return None
+
+        states_raw = self.ha.get_states() if self.ha else []
+        state_map = {s.get("entity_id"): s for s in (states_raw or [])}
+
+        # Price forecast: prefer the same forecast attribute used for the
+        # L9 tariff-horizon helpers; fall back to a flat series at the
+        # sensor's current value when no forecast attribute is present.
+        prices = None
+        spot_eid = config.sensors.spot_price
+        if spot_eid and spot_eid in state_map:
+            state = state_map[spot_eid]
+            forecast = self._extract_price_forecast(state.get("attributes") or {})
+            if forecast:
+                from .optimizer import SGrOptimizer
+                prices = SGrOptimizer.hourly_price_series(forecast)
+            else:
+                current = self._safe_float(state_map, spot_eid)
+                if current:
+                    prices = [current] * 24
+        if prices is None:
+            from .optimizer import DEFAULT_FALLBACK_PRICE
+            prices = [DEFAULT_FALLBACK_PRICE] * 24
+
+        # PV forecast: the self-computed Open-Meteo series when available,
+        # else zeros (conservative — the optimizer just won't schedule
+        # around solar surplus it doesn't know about).
+        pv_w = None
+        if self.pv_forecast_service and self.pv_forecast_service.enabled:
+            pv_w = self.pv_forecast_service.get_hourly_forecast_w()
+        if pv_w is None:
+            pv_w = [0.0] * 24
+
+        battery_soc = self._safe_float(state_map, config.sensors.battery_soc)
+
+        result = self.optimizer.optimize(prices, pv_w, battery_soc_pct=battery_soc)
+        logger.info(
+            "Optimizer: schedule computed (solver=%s, savings=%.2f CHF, self_consumption=%.0f%%)",
+            result.solver, result.savings_chf, result.self_consumption_pct,
+        )
+        return result.to_dict()
 
     # ------------------------------------------------------------------
     # Audit log
@@ -527,6 +618,7 @@ class RulesEngine:
         state_map: Dict[str, Dict],
         grid_connection_limit_w: float = 0.0,
         battery_capacity_kwh: float = 0.0,
+        optimizer_devices: Optional[List[Any]] = None,
     ) -> Dict[str, Any]:
         now = self._now_local()
         minute = now.minute
@@ -550,6 +642,23 @@ class RulesEngine:
             ctx[key] = self._safe_float(state_map, entity_id)
         for key, entity_id in sensors.extra.items():
             ctx[key] = self._safe_float(state_map, entity_id)
+
+        # Self-computed PV forecast fallback (Open-Meteo) — only kicks in
+        # when no sensors.pv_forecast_kwh entity is mapped (or it reads 0)
+        # and the user has declared at least one pv_arrays: entry.
+        if not ctx.get("pv_forecast_kwh") and self.pv_forecast_service and self.pv_forecast_service.enabled:
+            summary = self.pv_forecast_service.get_summary()
+            if summary:
+                ctx["pv_forecast_kwh"] = summary.get("tomorrow_kwh", 0.0)
+                ctx["pv_forecast_today_kwh"] = summary.get("today_kwh", 0.0)
+                ctx["pv_forecast_next_4h_kwh"] = summary.get("next_4h_kwh", 0.0)
+                ctx["pv_forecast_source"] = "open-meteo"
+            else:
+                ctx["pv_forecast_next_4h_kwh"] = 0.0
+                ctx["pv_forecast_source"] = "none"
+        else:
+            ctx.setdefault("pv_forecast_next_4h_kwh", 0.0)
+            ctx.setdefault("pv_forecast_source", "sensor" if ctx.get("pv_forecast_kwh") else "none")
 
         pv = ctx.get("pv_power", 0)
         consumption = ctx.get("house_consumption", 0)
@@ -591,6 +700,11 @@ class RulesEngine:
         # Vehicles
         self._build_vehicle_context(ctx, vehicles, state_map)
 
+        # Predictive-dispatch optimizer schedule (opt-in) — injects
+        # optimizer_<slug>_power_w / _current_a / _on context variables
+        # for whichever devices are registered under optimizer.devices.
+        self._build_optimizer_context(ctx, optimizer_devices or [])
+
         return ctx
 
     @staticmethod
@@ -619,6 +733,42 @@ class RulesEngine:
             ctx["battery_capacity_kwh"] = 0.0
             ctx["battery_available_kwh"] = 0.0
             ctx["battery_room_kwh"] = 0.0
+
+    def _build_optimizer_context(self, ctx: Dict[str, Any], optimizer_devices: List[Any]) -> None:
+        """Inject the predictive-dispatch optimizer's current-hour schedule.
+
+        For each device declared under ``optimizer.devices``, exposes:
+          - ``optimizer_<slug>_power_w``   — scheduled power, watts
+          - ``optimizer_<slug>_current_a`` — approximate amps (power / (V·phases))
+          - ``optimizer_<slug>_on``        — bool, power > 0
+
+        Plus two aggregate keys: ``optimizer_enabled`` and, when a result
+        is available, ``optimizer_savings_chf`` / ``optimizer_self_consumption_pct``.
+        No-op (all keys default to 0/False) when the optimizer is
+        disabled or has not computed a schedule yet — existing rules
+        that reference these keys simply do not match, same as any
+        other missing context variable.
+        """
+        ctx["optimizer_enabled"] = bool(self.optimizer and self.optimizer.enabled)
+        ctx["optimizer_savings_chf"] = 0.0
+        ctx["optimizer_self_consumption_pct"] = 0.0
+        if not self.optimizer or not self.optimizer.enabled:
+            return
+
+        result = self.optimizer.get_last_result()
+        if result is None:
+            return
+        ctx["optimizer_savings_chf"] = round(result.savings_chf, 4)
+        ctx["optimizer_self_consumption_pct"] = round(result.self_consumption_pct, 1)
+
+        for dev in optimizer_devices:
+            slug = re.sub(r"[^a-z0-9]+", "_", dev.name.lower()).strip("_") or "device"
+            power_w = result.current_hour_power(dev.name) or 0.0
+            ctx[f"optimizer_{slug}_power_w"] = round(power_w, 0)
+            voltage = getattr(dev, "voltage", 230.0) or 230.0
+            phases = getattr(dev, "phases", 1) or 1
+            ctx[f"optimizer_{slug}_current_a"] = round(power_w / (voltage * phases), 2) if voltage and phases else 0.0
+            ctx[f"optimizer_{slug}_on"] = power_w > 0
 
     def _build_dso_context(
         self, ctx: Dict[str, Any], sensors: SensorMap, state_map: Dict[str, Dict]

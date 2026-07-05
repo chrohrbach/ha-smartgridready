@@ -1,7 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-07-05
 
+- **Predictive-dispatch optimizer (`optimizer:`, opt-in)**: MILP
+  (`scipy.optimize.milp`, greedy fallback without scipy) jointly
+  schedules devices + battery + grid over 24h to minimise cost.
+  Exposed as `optimizer_<device>_power_w` / `_current_a` / `_on`
+  context variables — a normal `rules:` entry applies it, so
+  hysteresis/audit/dispatch stay unchanged. `scipy` is intentionally
+  not in `requirements.txt` (armv7 wheel availability).
+- **Virtual devices (`virtual_devices:`)**: target plain HA entities
+  (`climate`/`switch`/`water_heater`/`number`) from `rules:` using the
+  same SG-Ready state literals as real SGr devices. Four types:
+  `climate_proxy`, `switch_proxy`, `boiler_proxy`, `number_proxy`. A
+  Home Assistant orchestration layer, not native SmartGridready
+  communication.
+- **Self-computed PV forecast (`pv_arrays:`)**: fetches solar
+  irradiance from Open-Meteo and estimates production when no
+  Forecast.Solar (or similar) sensor is mapped. New add-on options
+  `latitude`/`longitude` (fall back to HA's own location).
 - SG-Ready Mode-1 (`HP_LOCKED`) capped to BWP-mandated 2 h / 24 h.
 - V2H cycle counter now counts *transitions* into discharge, not raw
   negative writes — `max_cycles_per_day` finally behaves as named.

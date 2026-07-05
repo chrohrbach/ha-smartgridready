@@ -207,7 +207,9 @@ the SGr device entities still update via MQTT.
     3. Walk every rule, first matching condition wins.
     4. Skip if same value as last cycle OR within min_interval.
     5. For negative values, run the V2H/V2G safety check.
-    6. Write to the SGr data point via sgr-commhandler.
+    6. Write to the SGr data point via sgr-commhandler — or, for a
+       `virtual_devices:` entry, call the matching HA service
+       (climate/switch/water_heater/number) instead.
     7. Publish updated states to MQTT (HA picks them up as native
        sensors / numbers thanks to MQTT discovery).
     8. Append the decision to the rolling audit log.
@@ -224,7 +226,14 @@ logic for SGr devices: heat-pump SG-Ready mode, hot-water setpoint, EV
 current limit, V2H discharge, battery charge/discharge. No HA
 automations, no per-manufacturer Modbus/REST glue, no
 `modbus.write_register` jungle — the YAML is the single source of truth
-for steering SGr appliances.
+for steering SGr appliances. Hardware with **no digital SGr interface at
+all** can still use the same rules and the same SG-Ready state
+vocabulary via `virtual_devices:` — see
+[docs/configuration.md](docs/configuration.md#virtual_devices). For a
+cost-minimising 24h schedule instead of instant conditions, the opt-in
+`optimizer:` (MILP, greedy fallback without `scipy`) computes one and
+exposes it as context variables your `rules:` consume — see
+[docs/configuration.md](docs/configuration.md#optimizer).
 
 HA automations stay the right tool for everything **outside** the
 energy-steering loop:
@@ -506,32 +515,63 @@ this add-on implements and which it deliberately leaves out, see
 
 ## Project status
 
-**Early — not yet validated against physical hardware in this
-standalone packaging.** The underlying rules engine and SGr device
-wrapper are battle-tested inside the casasmooth platform, but this
-add-on is a freshly extracted, re-packaged release. Expect rough
-edges, breaking changes, and missing translations until the first
-0.x.x tags settle.
+**A foundation, not a finished/certified product — help is welcome.**
+That's the point of open-sourcing it: this repository gives you a
+spec-faithful starting point (generic EID-driven device connectivity,
+a safe rules DSL, V2H/V2G safety gating, an opt-in predictive
+optimizer, PV forecasting, virtual-device support) so you don't have
+to write the boring, easy-to-get-wrong 80% yourself — hysteresis
+persistence, BWP SG-Ready lock caps, retry/backoff, EID caching,
+MQTT discovery mapping, safe expression parsing without `eval()`.
+What it is **not**, yet:
 
-Pull requests welcome — especially:
-- bug reports from real installations,
+- **Not validated against physical hardware in production.** The test
+  suite (100+ tests) proves the logic is internally correct — DSL
+  edge cases, hysteresis math, V2H safety gates, the MILP solver — but
+  every test runs against mocked HA/SGr clients. Nobody has run this
+  standalone add-on against a real heat pump or wallbox for a month
+  yet. If you do, please open an issue with what you found.
+- **Not a single, unbroken lineage from one finished system.**
+  Some pieces (grid-CO₂ intensity resolution, the virtual-device
+  dispatch model, the predictive MILP optimizer) were adapted from
+  patterns implemented in [casasmooth](https://www.casasmooth.com), a
+  related smart-home platform by the same original contributor — but
+  this add-on's core (options/config loaders, the rules DSL grammar
+  itself, hysteresis/audit persistence, MQTT discovery, the ingress
+  UI) is an independent implementation written for this standalone
+  package, not a verbatim extraction. Treat any claim of prior
+  production mileage with appropriate skepticism until it's been
+  re-proven here.
+- **Not `1.0`.** Expect rough edges, breaking config-schema changes,
+  and missing translations until the first few `0.x` releases settle.
+
+If you're implementing SmartGridready and this gets you 80% of the way
+there faster than starting from scratch, it did its job — the last
+20% (field validation on your specific hardware, edge cases we haven't
+hit yet) is exactly where contributions matter most:
+
+- bug reports from real installations (what broke, on what hardware,
+  with which EID),
 - device profiles (EID identifiers) for hardware not yet listed,
 - V2H / V2G hardware reports (wallbox EIDs that actually accept a
   negative current target),
+- field reports on the predictive optimizer (does the schedule survive
+  contact with a real spot-price feed and a real battery?),
 - translations (the ingress UI is currently English-only).
 
 ---
 
 ## Credits
 
-This add-on was contributed to the open-source community by
-[**teleia**](https://www.teleia.ch), which has natively integrated
-SmartGridready into its smart-home platform
-[**casasmooth**](https://www.casasmooth.com). The code released here
-is the same engine that drives heat pumps, EV chargers, and energy
-meters in casasmooth installations — extracted, decoupled, and
-re-packaged as a standalone Home Assistant add-on so the wider
-community can benefit from a manufacturer-neutral energy stack.
+This add-on's design and several of its algorithms draw on patterns
+used in [**teleia**](https://www.teleia.ch)'s smart-home platform
+[**casasmooth**](https://www.casasmooth.com), which has its own,
+separately-maintained SmartGridready integration. This repository is
+an independent, standalone re-implementation for Home Assistant —
+built to be manufacturer-neutral and dependency-light rather than a
+literal code extraction — released so the wider community can build
+on a shared, honest foundation instead of everyone reinventing the
+same EID-parsing, hysteresis, and safety-gating logic from zero.
 
 ## License
 

@@ -53,4 +53,18 @@
   {% endif %}
 </section>
 {% endfor %}
+
+<h1>Virtual devices</h1>
+<p class="hint">Non-SGr Home Assistant entities piloted via plain service
+   calls — a Home Assistant orchestration layer, <strong>not</strong> native
+   SmartGridready communication.</p>
+{% if not virtual_devices %}
+<p>No virtual device has been declared.</p>
+{% endif %}
+{% for vd in virtual_devices %}
+<section class="device">
+  <h2>{{ vd.name }} <span class="badge">{{ vd.type }}</span></h2>
+  <p><strong>Targets:</strong> {{ vd.targets | join(", ") }}</p>
+</section>
+{% endfor %}
 {% endblock %}

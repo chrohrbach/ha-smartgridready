@@ -131,36 +131,44 @@ exist on a given device.
 | Kommunikation (PV / battery / charger / HP / meter) | **Covered.** Any device with an EID in the SGr library is addressable through the generic code path. | §2.2 |
 | Kommunikation Netz — tariffs | **Covered as a read path.** `DynamicTariff_*` EIDs can be connected and their forecast can be parsed if exposed as an HA attribute. | §3.4 |
 | Kommunikation Netz — DSO control | **Indirect.** The add-on has no incoming HTTP/EEBus/OCPP endpoint; instead it exposes `dso_curtailment_active` / `dso_curtailment_factor` context variables that any third-party HA integration can drive. | §3.2 |
-| Leistungsbegrenzung at PCC | **Indirect.** `pcc_power_w`, `pcc_headroom_w` and `pcc_overload` are first-class context variables that a rule can condition on. The add-on does **not** include an aggregate solver that automatically caps the sum of controllable loads. | §3.1 |
-| Systemoptimierung by tariff | **Covered.** Core feature of the rules engine. Each rule local; no joint MILP/MPC optimisation. | §3.3 |
+| Leistungsbegrenzung at PCC | **Partial, opt-in.** `pcc_power_w`, `pcc_headroom_w` and `pcc_overload` are first-class context variables any rule can condition on. The opt-in `optimizer:` MILP additionally enforces a **hard** PCC import/export cap jointly across every device it schedules — but only for devices declared under `optimizer.devices`, not for loads controlled purely through `rules:`. | §3.1 |
+| Systemoptimierung by tariff | **Covered**, two tiers. The rules engine evaluates conditions every cycle (each rule local, no cross-device coordination). The opt-in `optimizer:` adds a real MILP (`scipy.optimize.milp`, greedy fallback) that jointly schedules devices + battery + grid over a 24 h horizon to minimise cost — see §3.3. | §3.1, §3.3 |
 | Monitoring | **Partial.** The audit log records decisions (24 h rolling). Time-series measurements are delegated to HA Recorder / InfluxDB. | §3.6 |
 
 ---
 
 ## 3. Known gaps and roadmap
 
-### 3.1 Aggregate power cap at the PCC — Level 4 in spirit but not enforced
+### 3.1 Aggregate power cap at the PCC — Level 4 in spirit, partially enforced
 
-**Status:** the rules engine exposes the headroom but does not enforce
-a hard aggregate cap.
+**Status:** the DSL rules engine exposes headroom but does not enforce
+a hard aggregate cap; the opt-in `optimizer:` **does** enforce one, for
+the subset of devices it schedules.
 
-**What the add-on does today.** A rule can read `pcc_headroom_w` (=
-`grid_connection_limit_w` − current `grid_import`) and decide
-unilaterally to back off — for example `when: "pcc_headroom_w < 2000"
-value: 6` on a wallbox rule. This is sufficient when you have a
-single dominant flexible load.
+**What the add-on does today.**
 
-**What is missing.** If you have several flexible loads (heat pump,
-wallbox, immersion heater, battery), each rule is evaluated
-independently in priority order. A multi-device aware allocator
-would be needed to respect a hard sum-of-loads cap. This is the gap
-between SGr level 4 (dynamic setpoints) and a true *constrained*
-optimiser, and it is what the EMS label criterion
-**Leistungsbegrenzung** requires for compliance.
+- Via `rules:` alone: a rule can read `pcc_headroom_w` (=
+  `grid_connection_limit_w` − current `grid_import`) and decide
+  unilaterally to back off — for example `when: "pcc_headroom_w < 2000"
+  value: 6` on a wallbox rule. Each rule still evaluates independently;
+  several flexible loads backing off in the same cycle can overshoot
+  the cap in either direction.
+- Via the opt-in `optimizer:` MILP: `grid.pcc_import_w` /
+  `pcc_export_w` are **hard constraints** in the linear program — the
+  solver will not produce a schedule that exceeds them, jointly across
+  every device declared under `optimizer.devices` plus the battery.
+  This is the genuine multi-device-aware allocator this section used
+  to describe as a roadmap item.
 
-Planned: a future top-level `constraints:` block that runs after rule
-evaluation and clamps the action list against shared budgets. Not
-implemented yet.
+**What is still missing.** The MILP's PCC guarantee only holds for the
+devices it schedules and only as a *plan* — it does not read back
+live power in real time and re-solve if an unmodelled load spikes
+between the (default 30-minute) recompute cycles, and it says nothing
+about devices controlled purely through `rules:` alongside it. A truly
+hard real-time enforcement layer combining both would still need a
+future `constraints:` block that clamps the *executed* action list
+against shared budgets every evaluation cycle, not just the *planned*
+one every 30 minutes.
 
 ### 3.2 DSO control interface
 
@@ -195,16 +203,34 @@ that integration responsibility belongs further upstream in HA.
 
 ### 3.3 Predictive / horizon-aware control (Level 6)
 
-**Status:** rule-based on a fixed cadence.
+**Status:** implemented, opt-in, alongside the fixed-cadence rules engine.
 
-**What the add-on does today.** The engine evaluates every
-`evaluation_interval` seconds (default 300). PV forecast keys
-(`pv_forecast_kwh`, `pv_forecast_today_kwh`, …) and tariff horizon
-helpers (`tariff_next_3h_min/_max/_avg`,
-`tariff_in_lowest_quartile_today`) are surfaced so a rule can react
-to *near future* conditions without a true MPC layer.
+**What the add-on does today.** Two independent mechanisms coexist:
 
-**What the literature does.** Comparative studies of rule-based vs
+1. **`rules:` (always on).** Evaluated every `evaluation_interval`
+   seconds (default 300). PV forecast keys (`pv_forecast_kwh`,
+   `pv_forecast_today_kwh`, …) and tariff horizon helpers
+   (`tariff_next_3h_min/_max/_avg`, `tariff_in_lowest_quartile_today`)
+   let a rule react to *near future* conditions without a true MPC
+   layer.
+2. **`optimizer:` (opt-in).** A genuine MILP (`scipy.optimize.milp`,
+   falling back to a greedy heuristic when scipy is unavailable —
+   deliberately kept out of `requirements.txt` so every architecture
+   this add-on ships for, including `armv7`, keeps building without
+   depending on a prebuilt scipy/numpy wheel) computes a cost-minimising
+   24 h dispatch schedule for the devices, battery and PCC limits
+   declared under `optimizer:`. Recomputed every 30 minutes from the
+   current price forecast, PV forecast, and battery SoC — not a live
+   receding-horizon MPC re-solving every cycle, but a genuine
+   forecast-driven joint optimisation, which is what this section
+   used to flag as entirely missing. The computed schedule is exposed
+   as `rules:`-DSL context variables
+   (`optimizer_<device>_power_w` / `_current_a` / `_on`) rather than
+   writing anything itself — the existing rules engine (hysteresis,
+   audit log, real/virtual device dispatch) remains the single write
+   path. See `docs/configuration.md#optimizer`.
+
+**What the literature says.** Comparative studies of rule-based vs
 MPC/MILP/RL for heat pumps and EV charging consistently report 10–60 %
 gains for MPC, the upper end appearing when there is a hybrid storage
 system (battery + thermal). See e.g.
@@ -214,12 +240,12 @@ system (battery + thermal). See e.g.
 - *Economic MPC for office building with PV/HP/EV*, Energy & Buildings, 2025.
 - *AI-MPC for heat pumps — a review*, RSER, 2026.
 
-This gap is **deliberate**: a rule-based engine fits Home Assistant's
-operational profile (declarative, observable, restart-safe). A true
-MPC layer would require a thermal model of the building, an EV
-charging schedule from user input, and either an embedded solver
-(GLPK / OSQP / HiGHS) or a remote optimisation service. Neither is
-in scope of this add-on as currently architected.
+**What is still missing.** This is a day-ahead/rolling-window MILP,
+not a full receding-horizon MPC with live re-planning on every
+disturbance, and it has no thermal model of the building — it
+schedules electrical power, not indoor temperature. A closed-loop
+thermal MPC (predicting indoor temperature from an EID-less thermal
+model) remains out of scope of this add-on as currently architected.
 
 ### 3.4 Characteristic curves (Levels 3 and 5)
 
@@ -347,28 +373,33 @@ always available regardless of alignment.
 
 ### 3.13 Virtual devices / HA proxy layer
 
-**Status:** not implemented yet in this repository.
+**Status:** implemented.
 
-casasmooth contains an additional mechanism for "virtual devices"
-(`climate_proxy`, `switch_proxy`, `boiler_proxy`, `number_proxy`) that
-maps the same rule grammar onto Home Assistant service calls instead of
-native SGr device writes. This is a useful extension for non-SGr
-hardware and is a plausible future addition here.
-
-If/when added, it must be described precisely for what it is:
+`virtual_devices:` (`climate_proxy`, `switch_proxy`, `boiler_proxy`,
+`number_proxy`) maps the same SG-Ready state literals used for real SGr
+devices (`HP_LOCKED` / `HP_NORMAL` / `HP_INTENSIFIED` / `HP_FORCED`)
+onto plain Home Assistant service calls instead of native SGr device
+writes. A rule's `device:` may reference either a real SGr device name
+or a virtual device name — the rules engine dispatches to whichever
+matches.
 
 > **Important**
-> `virtual_devices` can use the same EMS engine for non-SGr hardware,
+> `virtual_devices` reuse the same rules engine for non-SGr hardware,
 > but this is **not SmartGridready-native behaviour**.
 
-- a **Home Assistant proxy/orchestration layer**
-- useful for applying the same EMS logic to non-SGr devices
+- a **Home Assistant orchestration layer**
+- useful for applying the same optimisation logic to non-SGr devices
+  (a heat pump with no digital SGr interface, an EV charger or boiler
+  behind a simple relay, an inverter limit exposed only as an HA
+  `number`)
 - **not** native SmartGridready communication
 - therefore **not evidence of SmartGridready conformity or certification**
 
-Virtual devices would widen practical coverage, but they would also move
-the add-on toward a hybrid HA energy orchestrator. They should never be
-marketed as "everything behind it becomes SmartGridready".
+Virtual devices widen practical coverage but move that specific part of
+the add-on toward a hybrid HA energy orchestrator. They are never
+marketed as "everything behind it becomes SmartGridready" — see
+[`docs/configuration.md`](configuration.md#virtual_devices) for the
+full schema.
 
 ---
 

@@ -8,6 +8,15 @@ SmartGridready specifications and Python commhandler, but any formal
 conformity or EMS certification would require an explicit certification
 process with SmartGridready / the relevant lab.
 
+**Project status: a foundation to build on, not a field-proven
+product.** The logic is thoroughly unit-tested (100+ tests covering the
+rules DSL, hysteresis, V2H safety, the predictive optimizer), but every
+test runs against mocked HA/SGr clients — nobody has run this
+standalone add-on against real hardware for an extended period yet. If
+you do, bug reports and hardware feedback on
+[GitHub](https://github.com/chrohrbach/ha-smartgridready/issues) are
+very welcome; that's the point of releasing it as open source.
+
 This document is shown by Home Assistant in the **Documentation** tab
 of the add-on page. The fuller, illustrated documentation lives in
 the [GitHub repository](https://github.com/chrohrbach/ha-smartgridready).
@@ -48,6 +57,8 @@ add-on.
 | `timezone`            | `Europe/Zurich`                  | local zone for hour / DST                  |
 | `align_to_quarter`    | `false`                          | align first tick to HH:00/15/30/45         |
 | `sg_ready_lock_cap_minutes` | `120`                      | BWP SG-Ready Mode-1 daily cap (0 = off)    |
+| `latitude`            | *(unset)*                        | override home latitude for the self-computed PV forecast; falls back to HA's own location |
+| `longitude`           | *(unset)*                        | override home longitude for the self-computed PV forecast; falls back to HA's own location |
 
 ## User configuration
 
@@ -69,15 +80,19 @@ Highlights worth knowing before you configure it:
 - `value:` supports simple `{{ key }}` placeholders resolved from the
   live rule context
 - `==` / `!=` also work with quoted string literals in `when:`
+- `pv_arrays:` lets the add-on compute its own PV forecast from
+  Open-Meteo (nameplate `kwp`/`tilt`/`azimuth`) when no Forecast.Solar
+  (or similar) integration is available
+- `virtual_devices:` lets `rules:` target plain HA entities (climate /
+  switch / water_heater / number) using the same SG-Ready state
+  vocabulary as real SGr devices — a Home Assistant orchestration
+  layer, **not** native SmartGridready communication
+- `optimizer:` adds an opt-in predictive-dispatch MILP (falls back to
+  a greedy heuristic without `scipy`) that schedules devices + battery
+  + grid over a 24h horizon; the schedule is exposed as context
+  variables consumed by a normal `rules:` entry
 
-Planned roadmap item:
-
-- optional `virtual_devices` / HA proxy devices may be added later to
-  drive non-SGr hardware through Home Assistant services. If/when that
-  lands, it will be documented as a Home Assistant proxy layer, not as
-  native SmartGridready support.
-
-> Important: `virtual_devices` can use the same EMS engine for non-SGr
+> Important: `virtual_devices` reuse the same rules engine for non-SGr
 > hardware, but this is **not SmartGridready-native behaviour**.
 
 ## Where to find EID profiles
@@ -92,13 +107,17 @@ restarts are fully offline.
 
 ## Project status
 
-**Early — not yet validated against physical hardware in this
-standalone packaging.** The underlying rules engine and SGr device
-wrapper are battle-tested inside the casasmooth platform; this
-add-on is a freshly extracted, re-packaged release.
+**A foundation, not a finished/certified product.** The rules DSL,
+hysteresis, V2H safety gating, and predictive optimizer are thoroughly
+unit-tested, but not yet validated against physical hardware in this
+standalone packaging. Some pieces (grid-CO₂ resolution, virtual-device
+dispatch, the MILP optimizer) were adapted from patterns implemented
+in casasmooth; the rest is an independent implementation written for
+this package. Bug reports and hardware feedback are very welcome.
 
 ## Credits
 
-Open-sourced by [teleia](https://www.teleia.ch) — the engine is
-extracted from [casasmooth](https://www.casasmooth.com), which has
-natively integrated SmartGridready since early 2026.
+Open-sourced by [teleia](https://www.teleia.ch). This add-on's design
+and several of its algorithms draw on patterns implemented in
+[casasmooth](https://www.casasmooth.com), which has its own,
+separately-maintained SmartGridready integration since early 2026.

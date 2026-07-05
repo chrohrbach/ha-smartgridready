@@ -58,6 +58,30 @@ def test_load_skips_invalid_devices(tmp_path: Path):
     assert [d.name for d in user.devices] == ["Good"]
 
 
+def test_load_pv_arrays(tmp_path: Path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        "pv_arrays:\n"
+        "  - name: Roof south\n"
+        "    kwp: 6.5\n"
+        "    tilt: 30\n"
+        "    azimuth: 180\n"
+        "  - name: No kwp\n"          # dropped: kwp missing
+        "  - name: Zero kwp\n"
+        "    kwp: 0\n"                # dropped: kwp <= 0
+        "  - kwp: 3.0\n",             # kept: name defaults to 'pv'
+        encoding="utf-8",
+    )
+    user = load_user_config(cfg)
+    assert [a.name for a in user.pv_arrays] == ["Roof south", "pv"]
+    roof = user.pv_arrays[0]
+    assert roof.kwp == 6.5
+    assert roof.tilt == 30.0
+    assert roof.azimuth == 180.0
+    assert roof.efficiency == 0.80
+    assert user.pv_arrays[1].tilt is None
+
+
 def test_load_rules(tmp_path: Path):
     cfg = tmp_path / "config.yaml"
     cfg.write_text(

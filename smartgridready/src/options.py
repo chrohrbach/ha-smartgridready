@@ -11,6 +11,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger("smartgridready.options")
 
@@ -35,6 +36,14 @@ DEFAULTS = {
     # maximum of two hours per day across all utility lock events.
     # Set to 0 to disable the cap entirely (not recommended).
     "sg_ready_lock_cap_minutes": 120,
+    # Home coordinates for the self-computed Open-Meteo PV forecast.
+    # Left unset (None) by default — the add-on then falls back to
+    # whatever HA itself reports via GET /api/config, which is the
+    # location the user already configured during HA onboarding.
+    # Only set these explicitly when the PV array is not at the same
+    # coordinates as the HA installation (e.g. a detached barn/garage).
+    "latitude": None,
+    "longitude": None,
 }
 
 
@@ -49,6 +58,8 @@ class AddonOptions:
     timezone: str
     align_to_quarter: bool
     sg_ready_lock_cap_minutes: int
+    latitude: Optional[float]
+    longitude: Optional[float]
 
     @property
     def audit_path(self) -> Path:
@@ -82,4 +93,6 @@ def load_options(options_file: str | None = None) -> AddonOptions:
         timezone=str(merged["timezone"]).strip() or "Europe/Zurich",
         align_to_quarter=bool(merged["align_to_quarter"]),
         sg_ready_lock_cap_minutes=int(merged["sg_ready_lock_cap_minutes"]),
+        latitude=float(merged["latitude"]) if merged.get("latitude") is not None else None,
+        longitude=float(merged["longitude"]) if merged.get("longitude") is not None else None,
     )

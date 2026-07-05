@@ -26,6 +26,24 @@
   </div>
 </section>
 
+{% if optimizer_enabled %}
+<h2>Predictive-dispatch optimizer</h2>
+{% if optimizer_result %}
+<table>
+  <tr><th>Solver</th><td>{{ optimizer_result.solver }}</td></tr>
+  <tr><th>Computed at</th><td>{{ optimizer_result.computed_at }}</td></tr>
+  <tr><th>Estimated savings</th><td>{{ optimizer_result.savings_chf }} CHF / 24h</td></tr>
+  <tr><th>Self-consumption</th><td>{{ optimizer_result.self_consumption_pct }}%</td></tr>
+</table>
+<details>
+  <summary>Full schedule</summary>
+  <pre>{{ optimizer_result | tojson(indent=2) }}</pre>
+</details>
+{% else %}
+<p>Optimizer is enabled but has not computed a schedule yet.</p>
+{% endif %}
+{% endif %}
+
 <h2>Last evaluation</h2>
 {% if last %}
 <table>

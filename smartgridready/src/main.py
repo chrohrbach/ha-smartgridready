@@ -32,9 +32,12 @@ from . import __version__
 from .config_loader import UserConfig, load_user_config
 from .ha_client import HomeAssistantClient
 from .mqtt_discovery import MqttBridge
+from .optimizer import SGrOptimizer
 from .options import AddonOptions, load_options
+from .pv_forecast import PvForecastService
 from .rules_engine import RulesEngine
 from .sgr_service import SGrService
+from .virtual_devices import VirtualDeviceManager
 from .webui import build_app
 
 LOG_LEVEL_MAP = {
@@ -56,6 +59,9 @@ class AppState:
     sgr_service: Optional[SGrService] = None
     mqtt_bridge: Optional[MqttBridge] = None
     rules_engine: Optional[RulesEngine] = None
+    pv_forecast_service: Optional[PvForecastService] = None
+    virtual_devices: Optional[VirtualDeviceManager] = None
+    optimizer: Optional[SGrOptimizer] = None
     user_config: Optional[UserConfig] = None
     shutdown_event: Optional[asyncio.Event] = None
 
@@ -118,6 +124,85 @@ async def evaluation_loop(state: AppState) -> None:
             continue
 
 
+PV_FORECAST_INTERVAL_SECONDS = 6 * 3600  # Open-Meteo is free but there is no
+# reason to poll it every evaluation cycle — solar irradiance forecasts
+# don't change meaningfully faster than a few times a day.
+
+
+async def pv_forecast_loop(state: AppState) -> None:
+    """Periodically refresh the self-computed PV forecast (Open-Meteo).
+
+    No-op when the user has not declared any ``pv_arrays:`` — the initial
+    ``update()`` call returns False immediately in that case, cheaply.
+    """
+    log = logging.getLogger("smartgridready.pv_forecast_loop")
+    assert state.pv_forecast_service is not None
+    assert state.shutdown_event is not None
+    if not state.pv_forecast_service.enabled:
+        return
+
+    # Small initial delay so HA/the network have time to settle on boot,
+    # then fetch immediately rather than waiting a full interval.
+    try:
+        await asyncio.wait_for(state.shutdown_event.wait(), timeout=30)
+        return
+    except asyncio.TimeoutError:
+        pass
+
+    while not state.shutdown_event.is_set():
+        try:
+            await state.pv_forecast_service.update()
+        except Exception:
+            log.exception("PV forecast update crashed — continuing")
+        try:
+            await asyncio.wait_for(
+                state.shutdown_event.wait(), timeout=PV_FORECAST_INTERVAL_SECONDS
+            )
+            return
+        except asyncio.TimeoutError:
+            continue
+
+
+OPTIMIZER_INTERVAL_SECONDS = 30 * 60  # price/PV forecasts and battery SoC
+# move faster than PV irradiance but still don't need a fresh 24h schedule
+# every 5-min evaluation cycle.
+
+
+async def optimizer_loop(state: AppState) -> None:
+    """Periodically recompute the predictive-dispatch schedule (opt-in).
+
+    No-op when the user has not enabled ``optimizer:`` / declared any
+    ``optimizer.devices`` — ``run_optimizer()`` returns None immediately.
+    """
+    log = logging.getLogger("smartgridready.optimizer_loop")
+    assert state.rules_engine is not None
+    assert state.user_config is not None
+    assert state.shutdown_event is not None
+    if not state.optimizer or not state.optimizer.enabled:
+        return
+
+    # Small initial delay so devices/HA have settled, then compute
+    # immediately rather than waiting a full interval.
+    try:
+        await asyncio.wait_for(state.shutdown_event.wait(), timeout=45)
+        return
+    except asyncio.TimeoutError:
+        pass
+
+    while not state.shutdown_event.is_set():
+        try:
+            await state.rules_engine.run_optimizer(state.user_config)
+        except Exception:
+            log.exception("Optimizer cycle crashed — continuing")
+        try:
+            await asyncio.wait_for(
+                state.shutdown_event.wait(), timeout=OPTIMIZER_INTERVAL_SECONDS
+            )
+            return
+        except asyncio.TimeoutError:
+            continue
+
+
 async def run() -> int:
     state = AppState()
     configure_logging(state.options.log_level)
@@ -131,21 +216,39 @@ async def run() -> int:
     # Load user config (writes example if missing).
     state.user_config = load_user_config(state.options.config_path)
     log.info(
-        "Loaded user config: %d device(s), %d rule(s), %d vehicle(s)",
+        "Loaded user config: %d device(s), %d rule(s), %d vehicle(s), %d virtual device(s), %d optimizer device(s)",
         len(state.user_config.devices),
         len(state.user_config.rules),
         len(state.user_config.vehicles),
+        len(state.user_config.virtual_devices),
+        len(state.user_config.optimizer.devices) if state.user_config.optimizer.enabled else 0,
     )
 
     # Build core services.
     state.ha_client = HomeAssistantClient()
     state.sgr_service = SGrService(state.options.cache_path)
+    state.pv_forecast_service = PvForecastService(
+        state.ha_client, state.options.cache_path, state.options
+    )
+    state.pv_forecast_service.load_arrays(state.user_config.pv_arrays)
+    state.virtual_devices = VirtualDeviceManager()
+    state.virtual_devices.load(state.user_config.virtual_devices)
+    state.optimizer = SGrOptimizer(state.options.cache_path)
+    if state.user_config.optimizer.enabled:
+        state.optimizer.load(
+            state.user_config.optimizer.devices,
+            state.user_config.optimizer.battery,
+            state.user_config.optimizer.grid,
+        )
     state.rules_engine = RulesEngine(
         state.sgr_service,
         state.ha_client,
         state.options.audit_path,
         tz_name=state.options.timezone,
         sg_ready_lock_cap_minutes=state.options.sg_ready_lock_cap_minutes,
+        pv_forecast_service=state.pv_forecast_service,
+        virtual_devices=state.virtual_devices,
+        optimizer=state.optimizer,
     )
 
     # Connect devices (best-effort: failures do not abort the add-on).
@@ -188,6 +291,8 @@ async def run() -> int:
     server = uvicorn.Server(config)
     web_task = asyncio.create_task(server.serve(), name="webui")
     eval_task = asyncio.create_task(evaluation_loop(state), name="evaluation")
+    pv_forecast_task = asyncio.create_task(pv_forecast_loop(state), name="pv_forecast")
+    optimizer_task = asyncio.create_task(optimizer_loop(state), name="optimizer")
 
     # Wait for shutdown signal.
     await state.shutdown_event.wait()
@@ -196,8 +301,18 @@ async def run() -> int:
     # Graceful drain.
     server.should_exit = True
     eval_task.cancel()
+    pv_forecast_task.cancel()
+    optimizer_task.cancel()
     try:
         await eval_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await pv_forecast_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await optimizer_task
     except asyncio.CancelledError:
         pass
     try:

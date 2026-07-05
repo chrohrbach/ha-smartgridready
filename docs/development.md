@@ -18,6 +18,9 @@ ha-smartgridready/
 │       ├── ha_client.py       # HA Supervisor REST client
 │       ├── sgr_service.py     # sgr-commhandler wrapper
 │       ├── rules_engine.py    # DSL + evaluator + audit
+│       ├── virtual_devices.py # non-SGr devices piloted via HA services
+│       ├── pv_forecast.py     # self-computed PV forecast (Open-Meteo)
+│       ├── optimizer.py       # opt-in predictive-dispatch MILP
 │       ├── mqtt_discovery.py  # HA MQTT entity bridge
 │       ├── webui.py           # FastAPI ingress UI
 │       ├── templates/         # Jinja2 HTML

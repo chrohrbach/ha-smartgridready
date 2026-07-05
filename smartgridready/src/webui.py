@@ -49,6 +49,9 @@ def build_app(state) -> FastAPI:
     async def index(request: Request) -> Any:
         cfg = state.user_config
         last = state.rules_engine.last_result if state.rules_engine else {}
+        optimizer_result = (
+            state.optimizer.get_last_result() if state.optimizer and state.optimizer.enabled else None
+        )
         return templates.TemplateResponse(
             "index.html",
             {
@@ -60,6 +63,8 @@ def build_app(state) -> FastAPI:
                 "evaluation_interval": state.options.evaluation_interval,
                 "last": last,
                 "mqtt_enabled": state.mqtt_bridge.enabled if state.mqtt_bridge else False,
+                "optimizer_enabled": bool(state.optimizer and state.optimizer.enabled),
+                "optimizer_result": optimizer_result.to_dict() if optimizer_result else None,
             },
         )
 
@@ -70,6 +75,7 @@ def build_app(state) -> FastAPI:
             {
                 "request": request,
                 "devices": state.sgr_service.list_devices() if state.sgr_service else [],
+                "virtual_devices": state.virtual_devices.list_devices() if state.virtual_devices else [],
             },
         )
 
@@ -111,12 +117,27 @@ def build_app(state) -> FastAPI:
     @app.get("/api/status")
     async def api_status() -> JSONResponse:
         last = state.rules_engine.last_result if state.rules_engine else {}
+        optimizer_enabled = bool(state.optimizer and state.optimizer.enabled)
         return JSONResponse({
             "version": state.version,
             "devices": state.sgr_service.list_devices() if state.sgr_service else [],
+            "virtual_devices": state.virtual_devices.list_devices() if state.virtual_devices else [],
             "mqtt_enabled": state.mqtt_bridge.enabled if state.mqtt_bridge else False,
+            "optimizer_enabled": optimizer_enabled,
             "last_evaluation": last,
         })
+
+    @app.get("/api/optimizer")
+    async def api_optimizer() -> JSONResponse:
+        """Last computed predictive-dispatch schedule, or a disabled marker."""
+        if not state.optimizer or not state.optimizer.enabled:
+            return JSONResponse({"enabled": False})
+        result = state.optimizer.get_last_result()
+        if result is None:
+            return JSONResponse({"enabled": True, "schedule": None})
+        payload = result.to_dict()
+        payload["enabled"] = True
+        return JSONResponse(payload)
 
     @app.get("/api/audit")
     async def api_audit(limit: int = 50) -> JSONResponse:

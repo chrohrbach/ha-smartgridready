@@ -123,6 +123,23 @@ class HomeAssistantClient:
             logger.warning("HA call_service(%s.%s) failed: %s", domain, service, exc)
             return False
 
+    def get_config(self) -> Optional[Dict[str, Any]]:
+        """Return HA's own core config (latitude, longitude, elevation,
+
+        unit_system, time_zone, ...) via ``GET /api/config``. Used as the
+        zero-config fallback for the self-computed PV forecast when the
+        add-on options do not override latitude/longitude explicitly.
+        """
+        if not self.available:
+            return None
+        try:
+            r = self._sync().get("/config")
+            r.raise_for_status()
+            return r.json()
+        except Exception as exc:
+            logger.warning("HA get_config failed: %s", exc)
+            return None
+
     # -- public async API ----------------------------------------------------
 
     async def aget_states(self) -> List[Dict[str, Any]]:
@@ -153,6 +170,19 @@ class HomeAssistantClient:
         except Exception as exc:
             logger.warning("HA acall_service(%s.%s) failed: %s", domain, service, exc)
             return False
+
+    async def aget_config(self) -> Optional[Dict[str, Any]]:
+        """Async counterpart of :meth:`get_config`."""
+        if not self.available:
+            return None
+        try:
+            client = await self._async()
+            r = await client.get("/config")
+            r.raise_for_status()
+            return r.json()
+        except Exception as exc:
+            logger.warning("HA aget_config failed: %s", exc)
+            return None
 
     # -- helpers -------------------------------------------------------------
 

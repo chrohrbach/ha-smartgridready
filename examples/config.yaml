@@ -161,6 +161,20 @@ rules:
       - when: "is_peak AND v2h_available AND home_deficit_w > 500"
         value: -10
 
+  # Virtual device: the same SG-Ready vocabulary, dispatched via
+  # climate.set_temperature instead of an SGr write. `device:` matches
+  # a `virtual_devices[].name`, not an SGr `devices[].name`.
+  - device: "Living room heat pump (no SGr interface)"
+    profile: "SG-ReadyStates"        # kept for consistency; ignored for virtual devices
+    data_point: "SGReadyOpModeCmd"   # kept for consistency; ignored for virtual devices
+    conditions:
+      - when: "has_surplus AND spot_price < 0.08"
+        value: HP_FORCED
+      - when: "spot_price > 0.25"
+        value: HP_LOCKED
+      - default:
+        value: HP_NORMAL
+
 # -- Vehicles (V2H / V2G) ---------------------------------------------
 # Required to allow negative current targets.
 
@@ -180,3 +194,76 @@ vehicles:
       max_cycles_per_day: 1
       requires_grd_agreement: false
       grd_agreement_signed: false
+
+# -- PV arrays (self-computed forecast) --------------------------------
+# Optional. Only needed if you have no Forecast.Solar (or similar)
+# integration to map under sensors.pv_forecast_kwh — when at least one
+# array is declared here, the add-on fetches solar irradiance from
+# Open-Meteo itself and estimates production. Home coordinates come
+# from the add-on options `latitude`/`longitude`, or from HA's own
+# location if left unset.
+
+pv_arrays:
+  - name: "Roof south"
+    kwp: 6.5
+    tilt: 30
+    azimuth: 180
+    efficiency: 0.80
+
+# -- Virtual devices (non-SGr, piloted via HA services) ----------------
+# Optional. Target plain HA entities from `rules:` using the same
+# SG-Ready state literals (HP_LOCKED / HP_NORMAL / HP_INTENSIFIED /
+# HP_FORCED) as real SGr devices — see docs/configuration.md.
+
+virtual_devices:
+  - name: "Living room heat pump (no SGr interface)"
+    type: climate_proxy
+    climate_entities: [climate.living_room]
+    base_setpoint_default: 21.0
+    min_setpoint: 16.0
+    max_setpoint: 24.0
+    sg_ready_to_offset:
+      HP_LOCKED: -3.0
+      HP_NORMAL: 0.0
+      HP_INTENSIFIED: 1.5
+      HP_FORCED: 3.0
+
+# -- Predictive-dispatch optimizer (opt-in MILP) ------------------------
+# Optional, disabled by default. Adds a second, opt-in optimisation layer
+# on top of `rules:` — a cost-minimising 24h schedule for the devices
+# and battery listed here, respecting the grid connection limit. The
+# schedule is exposed as `optimizer_<slug>_power_w` / `_current_a` /
+# `_on` context variables — you still write a `rules:` entry to apply
+# it. See docs/configuration.md#optimizer.
+
+optimizer:
+  enabled: false
+  devices:
+    - name: "Wallbox"
+      min_power_w: 0
+      max_power_w: 11000
+      must_run_hours: 0
+      preferred_window: [22, 6]
+      switchable: false
+      voltage: 230
+      phases: 1
+  battery:
+    capacity_kwh: 10
+    max_charge_w: 5000
+    max_discharge_w: 5000
+    soc_min_pct: 10
+    soc_max_pct: 95
+    efficiency: 0.95
+  grid:
+    pcc_import_w: 25000
+    pcc_export_w: 12000
+    export_price_chf_kwh: 0.08
+
+# Apply the optimizer's schedule to the wallbox — this rule still goes
+# through the normal rules engine (hysteresis, audit log, etc.).
+#   - device: "Wallbox"
+#     profile: "EMS_Current_Limit"
+#     data_point: "EMSCurrentLimit"
+#     conditions:
+#       - default:
+#         value: "{{ optimizer_wallbox_current_a }}"

@@ -4,9 +4,45 @@ All notable changes to the SmartGridready Home Assistant add-on are
 documented here. The format is based on [Keep a Changelog](https://keepachangelog.com)
 and this project adheres to [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.2.0] — 2026-07-05
 
 ### Added
+- **Predictive-dispatch optimizer (`optimizer:`, opt-in)**: a genuine
+  MILP (`scipy.optimize.milp`, falling back to a greedy heuristic when
+  scipy is unavailable) that jointly schedules controllable devices, the
+  home battery, and the grid connection over a 24h horizon to minimise
+  cost — a second, opt-in optimisation layer alongside the always-on
+  `rules:` DSL engine. The computed schedule is exposed as context
+  variables (`optimizer_<device>_power_w` / `_current_a` / `_on`,
+  `optimizer_savings_chf`, `optimizer_self_consumption_pct`) consumed by
+  a normal `rules:` entry — the optimizer never writes anything itself,
+  keeping the existing rules engine (hysteresis, audit log, real/virtual
+  device dispatch) as the single write path. Recomputed every 30
+  minutes from the current price forecast (reusing the L9 tariff-horizon
+  parser), the self-computed PV forecast, and battery SoC. `scipy` is
+  deliberately **not** in `requirements.txt` — this add-on ships for
+  `armv7` too, where a prebuilt scipy/numpy wheel isn't guaranteed.
+- **Virtual devices (`virtual_devices:`)**: `rules:` can now target
+  plain Home Assistant entities (`climate`, `switch`, `water_heater`,
+  `number`) using the exact same SG-Ready state literals
+  (`HP_LOCKED` / `HP_NORMAL` / `HP_INTENSIFIED` / `HP_FORCED`) already
+  used for real SGr devices. Four types: `climate_proxy` (temperature
+  offset from a base setpoint), `switch_proxy` (on/off), `boiler_proxy`
+  (`water_heater.set_temperature`), `number_proxy`
+  (`number.set_value`). This is a Home Assistant orchestration layer,
+  **not** native SmartGridready communication — see
+  `docs/scope-and-gaps.md` §3.13.
+- **Self-computed PV forecast (`pv_arrays:`)**: when no
+  `sensors.pv_forecast_kwh` entity is mapped, the add-on can now fetch
+  solar irradiance from Open-Meteo itself and estimate production from
+  one or more declared arrays (`kwp`, optional `tilt`/`azimuth` for
+  plane-of-array transposition, `efficiency`). Refreshed every 6 h and
+  cached to survive restarts / transient network failures. Home
+  coordinates come from the new add-on options `latitude`/`longitude`,
+  falling back to HA's own `GET /api/config` when unset.
+- **`HomeAssistantClient.get_config()` / `aget_config()`**: read HA's
+  core config (latitude, longitude, elevation, time zone) via
+  `GET /api/config`.
 - **EVSE watchdog configuration**: devices may now declare
   `evse_safety.safe_current` and `evse_safety.max_receive_time_sec`.
   When the EID exposes the optional helper data points, the add-on
