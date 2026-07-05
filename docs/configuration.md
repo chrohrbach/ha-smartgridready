@@ -88,7 +88,7 @@ When set, three context variables become useful in rules:
 The engine does **not** automatically distribute headroom across
 several flexible loads — rules opt in to caring about the PCC by
 conditioning on these variables. See
-[scope-and-gaps.md §3.1](scope-and-gaps.md#31-aggregate-power-cap-at-the-pcc--level-4-in-spirit-but-not-enforced)
+[scope-and-gaps.md §3.1](scope-and-gaps.md#31-aggregate-power-cap-at-the-pcc--level-4-in-spirit-partially-enforced)
 for the rationale.
 
 ```yaml

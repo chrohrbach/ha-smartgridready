@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
-
 import src.pv_forecast as pv_forecast
 from src.config_loader import PvArrayConfig
 from src.options import AddonOptions

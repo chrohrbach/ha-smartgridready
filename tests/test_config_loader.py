@@ -6,7 +6,6 @@ from pathlib import Path
 
 from src.config_loader import (
     DeviceConfig,
-    SensorMap,
     UserConfig,
     ensure_example,
     load_user_config,

@@ -12,16 +12,13 @@ the root.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
-import yaml
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-
 
 SRC_DIR = Path(__file__).resolve().parent
 TEMPLATE_DIR = SRC_DIR / "templates"

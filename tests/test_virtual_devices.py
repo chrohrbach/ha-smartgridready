@@ -12,7 +12,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from src.config_loader import RuleConfig, SensorMap, UserConfig, load_user_config
 from src.rules_engine import RulesEngine
 from src.virtual_devices import VirtualDeviceManager

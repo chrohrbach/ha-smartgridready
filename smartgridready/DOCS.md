@@ -8,18 +8,11 @@ SmartGridready specifications and Python commhandler, but any formal
 conformity or EMS certification would require an explicit certification
 process with SmartGridready / the relevant lab.
 
-**Project status: a foundation to build on, not a field-proven
-product.** The logic is thoroughly unit-tested (100+ tests covering the
-rules DSL, hysteresis, V2H safety, the predictive optimizer), but every
-test runs against mocked HA/SGr clients — nobody has run this
-standalone add-on against real hardware for an extended period yet. If
-you do, bug reports and hardware feedback on
-[GitHub](https://github.com/chrohrbach/ha-smartgridready/issues) are
-very welcome; that's the point of releasing it as open source.
-
 This document is shown by Home Assistant in the **Documentation** tab
 of the add-on page. The fuller, illustrated documentation lives in
-the [GitHub repository](https://github.com/chrohrbach/ha-smartgridready).
+the [GitHub repository](https://github.com/chrohrbach/ha-smartgridready)
+— see the **Project status** section below before you rely on this for
+anything critical.
 
 ## What it does
 
@@ -107,13 +100,16 @@ restarts are fully offline.
 
 ## Project status
 
-**A foundation, not a finished/certified product.** The rules DSL,
-hysteresis, V2H safety gating, and predictive optimizer are thoroughly
-unit-tested, but not yet validated against physical hardware in this
-standalone packaging. Some pieces (grid-CO₂ resolution, virtual-device
-dispatch, the MILP optimizer) were adapted from patterns implemented
-in casasmooth; the rest is an independent implementation written for
-this package. Bug reports and hardware feedback are very welcome.
+**A foundation to build on, not a finished/field-proven product.** The
+rules DSL, hysteresis, V2H safety gating, and predictive optimizer are
+thoroughly unit-tested (100+ tests), but every test runs against
+mocked HA/SGr clients — nobody has run this standalone add-on against
+real hardware for an extended period yet. Some pieces (grid-CO₂
+resolution, virtual-device dispatch, the MILP optimizer) were adapted
+from patterns implemented in casasmooth; the rest is an independent
+implementation written for this package. Bug reports and hardware
+feedback on [GitHub](https://github.com/chrohrbach/ha-smartgridready/issues)
+are very welcome — that's the point of releasing it as open source.
 
 ## Credits
 

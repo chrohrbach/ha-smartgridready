@@ -12,7 +12,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from src.config_loader import (
     OptimizerBatteryConfig,
     OptimizerDeviceConfig,
