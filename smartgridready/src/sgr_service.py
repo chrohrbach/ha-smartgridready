@@ -162,8 +162,8 @@ class SGrService:
                 return direct.read_text(encoding="utf-8")
 
         # 3. Online library (mandatory .xml suffix)
-        from sgr_commhandler.declaration_library import get_product_eid_xml
         try:
+            from sgr_commhandler.declaration_library import get_product_eid_xml
             xml = get_product_eid_xml(library_name)
         except Exception as exc:
             # 4. Library unreachable — fall back to stale cache if available
@@ -229,20 +229,30 @@ class SGrService:
         wrap.connected = True
         self.devices[dev_cfg.name] = wrap
 
+        profiles: Dict[str, Any] = {}
         try:
             dev_name, profiles = device.describe()
             logger.info(
                 "Device %s (%s) connected — profiles: %s",
                 dev_cfg.name, dev_name, list(profiles.keys()),
             )
-            if dev_cfg.evse_safety:
+        except Exception as exc:
+            logger.warning("Device %s connected, but describe() failed: %s", dev_cfg.name, exc)
+
+        if dev_cfg.evse_safety:
+            try:
                 await self._configure_evse_watchdog(
                     dev_cfg.name,
                     dev_cfg.evse_safety,
                     list(profiles.keys()),
                 )
-        except Exception:
-            logger.info("Device %s connected", dev_cfg.name)
+            except Exception as exc:
+                # Safety-relevant: do not mask this as a normal "connected" log —
+                # an operator needs to know the EVSE watchdog is NOT armed.
+                logger.warning(
+                    "Device %s: EVSE safety watchdog configuration failed — %s",
+                    dev_cfg.name, exc,
+                )
         return True
 
     async def disconnect_all(self) -> None:

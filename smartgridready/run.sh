@@ -12,7 +12,6 @@ else
 fi
 
 export PYTHONPATH="/opt/smartgridready"
-export SGR_LOG_LEVEL="${LOG_LEVEL}"
 export SGR_OPTIONS_FILE="${OPTIONS_FILE}"
 
 if [ -z "${SUPERVISOR_TOKEN:-}" ]; then
